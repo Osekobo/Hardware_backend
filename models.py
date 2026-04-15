@@ -76,3 +76,34 @@ class AuditLog(Base):
     event = Column(String)
     data = Column(String)
     timestamp = Column(DateTime, default=datetime.utcnow)
+
+
+class NewsletterSubscriber(Base):
+    __tablename__ = "newsletter_subscribers"
+
+    id = Column(Integer, primary_key=True)
+    email = Column(String, unique=True, index=True)
+    subscribed_at = Column(DateTime, default=datetime.utcnow)
+    is_active = Column(Integer, default=1)  # 1 for active, 0 for unsubscribed
+
+
+class Address(Base):
+    __tablename__ = "addresses"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    full_name = Column(String)
+    phone_number = Column(String)
+    address_line1 = Column(String)
+    address_line2 = Column(String, nullable=True)
+    city = Column(String)
+    county = Column(String)
+    postal_code = Column(String, nullable=True)
+    landmark = Column(String, nullable=True)
+    latitude = Column(Float, nullable=True)  # Add this
+    longitude = Column(Float, nullable=True)  # Add this
+    google_place_id = Column(String, nullable=True)  # Add this
+    is_default = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
