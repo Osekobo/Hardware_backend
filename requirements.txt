@@ -10,3 +10,4 @@ celery
 PyJWT==2.8.0
 email-validator==2.1.1
 africastalking==1.2.9
+cloudinary==1.40.0
