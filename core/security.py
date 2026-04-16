@@ -1,21 +1,28 @@
 from passlib.context import CryptContext
+import logging
 
+# Use PBKDF2 - no bcrypt issues, no 72-byte limit
 pwd_context = CryptContext(
-    schemes=["bcrypt"], deprecated="auto", pbkdf2_sha256__default_rounds=260000)
-
+    schemes=["pbkdf2_sha256"],
+    deprecated="auto"
+)
 
 def hash_password(password: str) -> str:
-    """Hash a password - handles any length safely"""
+    """
+    Hash a password using PBKDF2
+    """
     if not password:
         raise ValueError("Password cannot be empty")
+    
     return pwd_context.hash(password)
 
-
 def verify_password(password: str, hashed: str) -> bool:
-    """Verify a password against its hash"""
+    """
+    Verify a password against its hash
+    """
     if not password or not hashed:
         return False
-
+    
     try:
         return pwd_context.verify(password, hashed)
     except Exception:
