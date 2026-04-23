@@ -34,10 +34,13 @@ app.include_router(mpesa.router, prefix="/mpesa")
 app.include_router(upload.router, prefix="/upload")
 app.include_router(admin.router, prefix="/admin")
 app.include_router(newsletter.router, prefix="/newsletter")
+app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
+
 
 @app.get("/")
 def root():
     return {"message": "Kione Hardware API is running"}
+
 
 # This is the CRITICAL part for Render
 if __name__ == "__main__":
