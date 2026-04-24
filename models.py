@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, DateTime
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Enum, Boolean
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Enum, Boolean, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
@@ -26,11 +26,18 @@ class Product(Base):
     __tablename__ = "products"
 
     id = Column(Integer, primary_key=True)
-    name = Column(String)
-    description = Column(String)
+    name = Column(String, index=True)
+    description = Column(Text)
     price = Column(Float)
-    image_url = Column(String)
+    category = Column(String, index=True)  # ✅ Add this field
+    # Optional: for more specific filtering
+    subcategory = Column(String, nullable=True)
+    image_url = Column(String, nullable=True)
     stock = Column(Integer, default=0)
+    rating = Column(Float, default=0.0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow,
+                        onupdate=datetime.utcnow)
 
 
 class Cart(Base):
