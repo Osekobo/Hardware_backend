@@ -8,8 +8,8 @@ from database import Base, engine
 from routes import auth, products, cart, orders, mpesa, upload, admin, newsletter
 
 # Create tables
-Base.metadata.drop_all(bind=engine)
-# Base.metadata.create_all(bind=engine)
+# Base.metadata.drop_all(bind=engine)
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
