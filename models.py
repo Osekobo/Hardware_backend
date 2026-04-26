@@ -1,4 +1,3 @@
-from sqlalchemy import Column, Integer, String, DateTime
 from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Enum, Boolean, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -11,6 +10,9 @@ class OrderStatus(str, enum.Enum):
     pending = "pending"
     paid = "paid"
     shipped = "shipped"
+    delivered = "delivered"
+    cancelled = "cancelled"
+    payment_failed = "payment_failed"
 
 
 class User(Base):
@@ -20,6 +22,12 @@ class User(Base):
     name = Column(String)
     email = Column(String, unique=True)
     password = Column(String)
+    is_admin = Column(Boolean, default=False)  # ✅ Optional: add admin flag
+    
+    # Relationships
+    orders = relationship("Order", back_populates="user")
+    cart_items = relationship("Cart", back_populates="user")
+    addresses = relationship("Address", back_populates="user")
 
 
 class Product(Base):
@@ -29,15 +37,13 @@ class Product(Base):
     name = Column(String, index=True)
     description = Column(Text)
     price = Column(Float)
-    category = Column(String, index=True)  # ✅ Add this field
-    # Optional: for more specific filtering
+    category = Column(String, index=True)
     subcategory = Column(String, nullable=True)
     image_url = Column(String, nullable=True)
     stock = Column(Integer, default=0)
     rating = Column(Float, default=0.0)
     created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow,
-                        onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class Cart(Base):
@@ -47,33 +53,44 @@ class Cart(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     product_id = Column(Integer, ForeignKey("products.id"))
     quantity = Column(Integer, default=1)
+    
+    # Relationships
+    user = relationship("User", back_populates="cart_items")
+    product = relationship("Product")
 
 
-# models.py
 class Order(Base):
     __tablename__ = "orders"
-
+    
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer)
-
-    total = Column(Float)
-
-    status = Column(String, default="pending")  # pending, paid, failed
-
-    mpesa_receipt = Column(String, unique=True, nullable=True)
-    checkout_request_id = Column(String, unique=True, nullable=True)
-
+    user_id = Column(Integer, ForeignKey("users.id"))
+    total = Column(Float, default=0)
+    status = Column(Enum(OrderStatus), default=OrderStatus.pending)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # M-Pesa fields
+    mpesa_checkout_request_id = Column(String, nullable=True)
+    mpesa_receipt = Column(String, nullable=True)
     paid_at = Column(DateTime, nullable=True)
+    payment_error = Column(String, nullable=True)
+    
+    # Relationships
+    items = relationship("OrderItem", back_populates="order")
+    user = relationship("User", back_populates="orders")
 
 
 class OrderItem(Base):
     __tablename__ = "order_items"
 
     id = Column(Integer, primary_key=True)
-    order_id = Column(Integer)
-    product_id = Column(Integer)
+    order_id = Column(Integer, ForeignKey("orders.id"))
+    product_id = Column(Integer, ForeignKey("products.id"))
     quantity = Column(Integer)
     price = Column(Float)
+    
+    # Relationships
+    order = relationship("Order", back_populates="items")
+    product = relationship("Product")
 
 
 class AuditLog(Base):
@@ -91,7 +108,7 @@ class NewsletterSubscriber(Base):
     id = Column(Integer, primary_key=True)
     email = Column(String, unique=True, index=True)
     subscribed_at = Column(DateTime, default=datetime.utcnow)
-    is_active = Column(Integer, default=1)  # 1 for active, 0 for unsubscribed
+    is_active = Column(Integer, default=1)
 
 
 class Address(Base):
@@ -107,13 +124,15 @@ class Address(Base):
     county = Column(String)
     postal_code = Column(String, nullable=True)
     landmark = Column(String, nullable=True)
-    latitude = Column(Float, nullable=True)  # Add this
-    longitude = Column(Float, nullable=True)  # Add this
-    google_place_id = Column(String, nullable=True)  # Add this
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    google_place_id = Column(String, nullable=True)
     is_default = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow,
-                        onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationship
+    user = relationship("User", back_populates="addresses")
 
 
 class PasswordResetOTP(Base):
