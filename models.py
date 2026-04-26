@@ -22,7 +22,7 @@ class User(Base):
     name = Column(String)
     email = Column(String, unique=True)
     password = Column(String)
-    is_admin = Column(Boolean, default=False)  # ✅ Optional: add admin flag
+    # is_admin = Column(Boolean, default=False)  # ✅ Optional: add admin flag
     
     # Relationships
     orders = relationship("Order", back_populates="user")

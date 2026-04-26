@@ -3,6 +3,8 @@ add_products.py
 add_products_api.py
 create_tables.py
 get_fresh_token.py
+update_schema.py
+test_register.py
 token.txt
 .env
 *.pyc
