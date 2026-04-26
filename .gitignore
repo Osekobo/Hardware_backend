@@ -1,0 +1,7 @@
+# .gitignore
+add_products.py
+create_tables.py
+.env
+*.pyc
+__pycache__/
+venv/

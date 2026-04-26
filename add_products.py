@@ -9,6 +9,7 @@ from database import Base
 
 # Use your Render PostgreSQL connection string
 # Get this from Render Dashboard -> PostgreSQL Database -> Connection String
+# add_products.py - Update to match Render backend
 RENDER_DATABASE_URL = "postgresql://kione_hardware_db_user:dgEFoTNFveOAYaKvljd4HL9XcRlWiBAT@dpg-d7lb30f7f7vs73avj46g-a.oregon-postgres.render.com/kione_hardware_db"
 
 def add_products_to_render():
