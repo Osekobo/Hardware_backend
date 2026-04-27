@@ -5,6 +5,9 @@ create_tables.py
 get_fresh_token.py
 update_schema.py
 test_register.py
+update_images.py
+add_products_persistent.py
+update_images_pexels.py
 token.txt
 .env
 *.pyc
