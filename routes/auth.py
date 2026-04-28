@@ -20,6 +20,7 @@ class UserCreate(BaseModel):
     name: str
     email: EmailStr
     password: str
+    phone: str = None  # ✅ Added phone field (optional)
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -47,21 +48,23 @@ def register(data: UserCreate, db: Session = Depends(get_db)):
         if existing_user:
             raise HTTPException(400, "Email already registered")
 
-        # Create new user
+        # Create new user with phone
         user = User(
             name=data.name,
             email=data.email,
+            phone=data.phone,  # ✅ Added phone
             password=hash_password(data.password)
         )
         db.add(user)
         db.commit()
         db.refresh(user)
 
-        # Create token immediately
+        # Create token with phone
         token = create_token({
             "user_id": user.id,
             "name": user.name,
-            "email": user.email
+            "email": user.email,
+            "phone": user.phone or ""  # ✅ Added phone to token
         })
 
         logger.info(f"User registered: {data.email}")
@@ -74,7 +77,8 @@ def register(data: UserCreate, db: Session = Depends(get_db)):
             "user": {
                 "id": user.id,
                 "name": user.name,
-                "email": user.email
+                "email": user.email,
+                "phone": user.phone or ""  # ✅ Added phone to response
             }
         }
 
@@ -100,15 +104,27 @@ def login(data: UserLogin, db: Session = Depends(get_db)):
             logger.warning(f"Login failed: Wrong password - {data.email}")
             raise HTTPException(401, "Invalid email or password")
 
-        # Create token
+        # Create token with phone
         token = create_token({
             "user_id": user.id,
             "name": user.name,
-            "email": user.email
+            "email": user.email,
+            "phone": user.phone or ""  # ✅ Added phone to token
         })
 
         logger.info(f"User logged in: {data.email}")
-        return {"access_token": token, "token_type": "bearer"}
+        
+        # ✅ Return user data including phone
+        return {
+            "access_token": token, 
+            "token_type": "bearer",
+            "user": {
+                "id": user.id,
+                "name": user.name,
+                "email": user.email,
+                "phone": user.phone or ""
+            }
+        }
 
     except HTTPException:
         raise

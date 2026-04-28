@@ -14,3 +14,14 @@ def create_token(data: dict, expires: int = None) -> str:
 
 def decode_token(token: str):
     return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+
+def is_token_expired(token: str) -> bool:
+    """Check if a token has expired"""
+    try:
+        payload = decode_token(token)
+        exp = payload.get("exp")
+        if exp:
+            return datetime.utcnow() > datetime.fromtimestamp(exp)
+        return True
+    except jwt.InvalidTokenError:
+        return True
