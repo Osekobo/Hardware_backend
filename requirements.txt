@@ -13,3 +13,5 @@ email-validator==2.1.1
 africastalking==1.2.9
 cloudinary==1.40.0
 python-dotenv>=1.0.0
+python-dotenv==1.0.0
+slowapi==0.1.9
