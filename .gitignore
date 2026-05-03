@@ -14,3 +14,4 @@ token.txt
 __pycache__/
 venv/
 test.db
+.venv
