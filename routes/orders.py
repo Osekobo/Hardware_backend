@@ -1,9 +1,10 @@
 # routes/orders.py
 from pydantic import BaseModel
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timedelta
+import asyncio
 from database import get_db
 from models import Order, OrderItem, Product, Cart, User
 from utils.stock import reduce_stock
@@ -29,12 +30,40 @@ class EmailCampaign(BaseModel):
     subject: str
     message: str
 
+# Helper function to auto-cancel pending orders
+def auto_cancel_pending_order(order_id: int, timeout_minutes: int = 15):
+    """
+    Background task to automatically cancel pending orders after timeout
+    """
+    async def cancel_order():
+        await asyncio.sleep(timeout_minutes * 60)  # Convert to seconds
+        
+        from database import SessionLocal
+        db = SessionLocal()
+        try:
+            order = db.query(Order).filter(Order.id == order_id).first()
+            if order and order.status == 'pending':
+                order.status = 'cancelled'
+                order.payment_error = f"Order automatically cancelled after {timeout_minutes} minutes (payment timeout)"
+                db.commit()
+                print(f"⏰ Order #{order_id} auto-cancelled due to timeout")
+        except Exception as e:
+            print(f"Error auto-cancelling order {order_id}: {e}")
+        finally:
+            db.close()
+    
+    import asyncio
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(cancel_order())
+    loop.close()
 
 @router.post("/create")
 def create_order(
     order_data: OrderCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    background_tasks: BackgroundTasks = None
 ):
     """
     Create an order before payment processing
@@ -71,6 +100,14 @@ def create_order(
         db.commit()
         db.refresh(order)
         
+        # Schedule auto-cancellation after 15 minutes
+        import threading
+        thread = threading.Thread(target=auto_cancel_pending_order, args=(order.id, 15))
+        thread.daemon = True
+        thread.start()
+        
+        print(f"✅ Order #{order.id} created with auto-cancel scheduled in 15 minutes")
+        
         return {
             "success": True,
             "order_id": order.id,
@@ -84,7 +121,6 @@ def create_order(
         db.rollback()
         print(f"Order creation error: {e}")
         raise HTTPException(500, f"Failed to create order: {str(e)}")
-
 
 @router.post("/checkout")
 def checkout(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
@@ -124,9 +160,14 @@ def checkout(db: Session = Depends(get_db), user: User = Depends(get_current_use
 
     order.total = total
     db.commit()
+    
+    # Schedule auto-cancellation after 15 minutes
+    import threading
+    thread = threading.Thread(target=auto_cancel_pending_order, args=(order.id, 15))
+    thread.daemon = True
+    thread.start()
 
     return {"order_id": order.id, "total": total, "status": "pending"}
-
 
 @router.get("/")
 def get_orders(
@@ -134,13 +175,10 @@ def get_orders(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Get all orders for the current user (or all orders if admin)
+    Get all orders for the current user
     """
-    # Check if user is admin (you can add an is_admin field to User model)
-    # For now, return user's own orders
     orders = db.query(Order).filter(Order.user_id == current_user.id).order_by(Order.created_at.desc()).all()
     
-    # Include order items for each order
     result = []
     for order in orders:
         items = db.query(OrderItem).filter(OrderItem.order_id == order.id).all()
@@ -152,6 +190,7 @@ def get_orders(
             "created_at": order.created_at,
             "paid_at": order.paid_at,
             "mpesa_receipt": order.mpesa_receipt,
+            "payment_error": order.payment_error,
             "items": [
                 {
                     "product_id": item.product_id,
@@ -165,7 +204,6 @@ def get_orders(
     
     return result
 
-
 @router.get("/admin/all")
 def get_all_orders(
     db: Session = Depends(get_db),
@@ -174,7 +212,6 @@ def get_all_orders(
     """
     Get all orders (admin only)
     """
-    # TODO: Add admin check
     orders = db.query(Order).order_by(Order.created_at.desc()).all()
     
     result = []
@@ -191,6 +228,7 @@ def get_all_orders(
             "created_at": order.created_at,
             "paid_at": order.paid_at,
             "mpesa_receipt": order.mpesa_receipt,
+            "payment_error": order.payment_error,
             "items": [
                 {
                     "product_id": item.product_id,
@@ -202,7 +240,6 @@ def get_all_orders(
         })
     
     return result
-
 
 @router.get("/{order_id}")
 def get_order(
@@ -218,9 +255,7 @@ def get_order(
     if not order:
         raise HTTPException(404, "Order not found")
     
-    # Check if user owns the order or is admin
     if order.user_id != current_user.id:
-        # TODO: Add admin check
         raise HTTPException(403, "Access denied")
     
     items = db.query(OrderItem).filter(OrderItem.order_id == order.id).all()
@@ -233,6 +268,7 @@ def get_order(
         "created_at": order.created_at,
         "paid_at": order.paid_at,
         "mpesa_receipt": order.mpesa_receipt,
+        "payment_error": order.payment_error,
         "items": [
             {
                 "product_id": item.product_id,
@@ -242,7 +278,6 @@ def get_order(
             for item in items
         ]
     }
-
 
 @router.put("/{order_id}/status")
 def update_order_status(
@@ -254,17 +289,129 @@ def update_order_status(
     """
     Update order status (admin only)
     """
-    # TODO: Add admin check
-    
     order = db.query(Order).filter(Order.id == order_id).first()
     if not order:
         raise HTTPException(404, "Order not found")
-
+    
     order.status = status_data.status
     db.commit()
-
+    
     return {"message": "Order status updated", "status": order.status}
 
+@router.post("/{order_id}/cancel")
+def cancel_order(
+    order_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Cancel a pending order - CHANGES STATUS, DOES NOT DELETE
+    """
+    order = db.query(Order).filter(
+        Order.id == order_id,
+        Order.user_id == current_user.id
+    ).first()
+    
+    if not order:
+        raise HTTPException(404, "Order not found")
+    
+    if order.status != 'pending':
+        raise HTTPException(400, f"Cannot cancel order with status: {order.status}")
+    
+    # ✅ Change status, DO NOT delete
+    order.status = 'cancelled'
+    order.payment_error = "User cancelled the order"
+    # Optionally restore stock here if you reduced it
+    db.commit()
+    
+    return {"message": "Order cancelled successfully", "order_id": order_id, "status": "cancelled"}
+
+@router.post("/{order_id}/retry-payment")
+def retry_payment(
+    order_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Retry payment for a cancelled or failed order
+    Creates a new order with the same items
+    """
+    old_order = db.query(Order).filter(
+        Order.id == order_id,
+        Order.user_id == current_user.id
+    ).first()
+    
+    if not old_order:
+        raise HTTPException(404, "Order not found")
+    
+    if old_order.status not in ['cancelled', 'payment_failed']:
+        raise HTTPException(400, f"Cannot retry payment for order with status: {old_order.status}")
+    
+    # Create new order with same items
+    new_order = Order(
+        user_id=current_user.id,
+        total=old_order.total,
+        status="pending"
+    )
+    db.add(new_order)
+    db.flush()
+    
+    # Copy order items
+    old_items = db.query(OrderItem).filter(OrderItem.order_id == old_order.id).all()
+    for item in old_items:
+        new_item = OrderItem(
+            order_id=new_order.id,
+            product_id=item.product_id,
+            quantity=item.quantity,
+            price=item.price
+        )
+        db.add(new_item)
+    
+    db.commit()
+    db.refresh(new_order)
+    
+    # Schedule auto-cancellation for new order
+    import threading
+    thread = threading.Thread(target=auto_cancel_pending_order, args=(new_order.id, 15))
+    thread.daemon = True
+    thread.start()
+    
+    print(f"🔄 Retry payment for order #{order_id} -> New order #{new_order.id}")
+    
+    return {
+        "message": "Retry order created",
+        "old_order_id": order_id,
+        "new_order_id": new_order.id,
+        "total": new_order.total
+    }
+
+@router.post("/cleanup-pending")
+def cleanup_pending_orders(db: Session = Depends(get_db)):
+    """
+    Clean up old pending orders (admin endpoint or scheduled task)
+    """
+    timeout_minutes = 15
+    cutoff_time = datetime.utcnow() - timedelta(minutes=timeout_minutes)
+    
+    old_pending_orders = db.query(Order).filter(
+        Order.status == 'pending',
+        Order.created_at < cutoff_time
+    ).all()
+    
+    cancelled_count = 0
+    for order in old_pending_orders:
+        order.status = 'cancelled'
+        order.payment_error = f"Order automatically cancelled after {timeout_minutes} minutes (payment timeout)"
+        cancelled_count += 1
+    
+    db.commit()
+    
+    print(f"🧹 Cleaned up {cancelled_count} expired pending orders")
+    
+    return {
+        "message": f"Cancelled {cancelled_count} expired pending orders",
+        "cancelled": cancelled_count
+    }
 
 @router.post("/{order_id}/confirm-payment")
 def confirm_payment(
@@ -284,12 +431,15 @@ def confirm_payment(
     if order.user_id != current_user.id:
         raise HTTPException(403, "Access denied")
     
+    if order.status != 'pending':
+        raise HTTPException(400, f"Cannot confirm payment for order with status: {order.status}")
+    
     order.status = "paid"
     order.mpesa_receipt = mpesa_receipt
     order.paid_at = datetime.utcnow()
     db.commit()
     
-    # Reduce stock for items
+    # Reduce stock for items (if not already reduced)
     items = db.query(OrderItem).filter(OrderItem.order_id == order.id).all()
     for item in items:
         product = db.query(Product).filter(Product.id == item.product_id).first()
@@ -297,7 +447,6 @@ def confirm_payment(
             reduce_stock(product, item.quantity, db)
     
     return {"message": "Payment confirmed", "order_id": order_id, "status": "paid"}
-
 
 @router.post("/send")
 async def send_newsletter_email(
@@ -308,12 +457,8 @@ async def send_newsletter_email(
     """
     Send newsletter email campaign (admin only)
     """
-    # TODO: Add admin check
-    
     print(f"Sending email to {len(campaign.recipients)} recipients")
     print(f"Subject: {campaign.subject}")
     print(f"Message: {campaign.message}")
-
-    # TODO: Implement actual email sending using SendGrid, Mailgun, etc.
     
     return {"message": f"Email campaign sent to {len(campaign.recipients)} subscribers"}

@@ -8,12 +8,20 @@ import logging
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-# Make sure this is NOT using asyncpg
+# Get database URL
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Remove asyncpg if present
+# Check if URL exists
+if not SQLALCHEMY_DATABASE_URL:
+    raise ValueError("DATABASE_URL environment variable is not set")
+
+# Remove asyncpg if present (only for PostgreSQL URLs)
 if "asyncpg" in SQLALCHEMY_DATABASE_URL:
     SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("+asyncpg", "")
+
+# Ensure SSL for Render PostgreSQL
+if "render.com" in SQLALCHEMY_DATABASE_URL and "sslmode" not in SQLALCHEMY_DATABASE_URL:
+    SQLALCHEMY_DATABASE_URL += "?sslmode=require"
 
 # Create synchronous engine
 engine = create_engine(

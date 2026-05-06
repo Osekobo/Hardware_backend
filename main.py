@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
+from sqlalchemy import text  # ✅ Add this import
 import uvicorn
 
 # Load environment variables
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 from database import Base, engine, SessionLocal
 from routes import auth, products, cart, orders, mpesa, upload, admin, newsletter
 
-# ========== Lifespan Event Handler (Replaces startup/shutdown events) ==========
+# ========== Lifespan Event Handler ==========
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: Create tables and log startup
@@ -49,15 +50,15 @@ app = FastAPI(
     title="Kione Hardware API",
     version="1.0.0",
     lifespan=lifespan,
-    docs_url="/api/docs",
-    redoc_url="/api/redoc",
-    openapi_url="/api/openapi.json"
+    docs_url="/docs",
+    redoc_url="/redoc",  # ✅ Optional: change to /redoc for consistency
+    openapi_url="/openapi.json"  # ✅ Optional: change to /openapi.json
 )
 
 # ========== Middleware Configuration ==========
 
-# CORS Configuration - Read from environment variables
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
+# CORS Configuration
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8001").split(",")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -65,10 +66,10 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
     expose_headers=["Content-Length", "X-Total-Count"],
-    max_age=3600,  # Cache preflight requests for 1 hour
+    max_age=3600,
 )
 
-# Trusted Host Middleware (Production)
+# Trusted Host Middleware (Production only)
 if os.getenv("ENVIRONMENT", "development") == "production":
     ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "kione-hardware-api.onrender.com,localhost").split(",")
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
@@ -90,7 +91,7 @@ async def general_exception_handler(request, exc):
         content={"detail": "Internal server error", "status_code": 500}
     )
 
-# ========== Include Routers with Prefixes ==========
+# ========== Include Routers ==========
 routers = [
     (auth.router, "/auth", ["Authentication"]),
     (products.router, "/products", ["Products"]),
@@ -106,21 +107,22 @@ for router, prefix, tags in routers:
     app.include_router(router, prefix=prefix, tags=tags)
     logger.info(f"Registered router: {prefix}")
 
-# ========== Health Check & Monitoring Endpoints ==========
+# ========== Health Check Endpoints ==========
 @app.get("/", tags=["Root"])
 async def root():
     """Root endpoint with API information"""
     return {
         "message": "Kione Hardware API is running",
         "version": app.version,
-        "docs": "/api/docs",
+        "docs": "/docs",  # ✅ Fixed
+        "redoc": "/redoc",  # ✅ Added
         "health": "/health",
         "status": "operational"
     }
 
 @app.get("/health", tags=["Health"])
 async def health_check():
-    """Comprehensive health check endpoint for monitoring"""
+    """Comprehensive health check endpoint"""
     health_status = {
         "status": "healthy",
         "timestamp": __import__("datetime").datetime.utcnow().isoformat(),
@@ -133,7 +135,7 @@ async def health_check():
     # Check database connection
     try:
         db = SessionLocal()
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))  # ✅ Fixed with text()
         db.close()
         health_status["services"]["database"] = "healthy"
     except Exception as e:
@@ -161,24 +163,13 @@ async def api_info():
         ]
     }
 
-# ========== Database Session Middleware (Optional) ==========
-@app.middleware("http")
-async def db_session_middleware(request, call_next):
-    """Add database session to request state if needed"""
-    request.state.db = SessionLocal()
-    try:
-        response = await call_next(request)
-        return response
-    finally:
-        request.state.db.close()
+
 
 # ========== Production Ready Configuration ==========
 if __name__ == "__main__":
-    # Get port from environment (for Render)
     port = int(os.environ.get("PORT", 10000))
     environment = os.getenv("ENVIRONMENT", "development")
     
-    # Configure uvicorn based on environment
     if environment == "production":
         uvicorn.run(
             "main:app",
@@ -191,7 +182,6 @@ if __name__ == "__main__":
             forwarded_allow_ips="*"
         )
     else:
-        # Development settings with auto-reload
         uvicorn.run(
             "main:app",
             host="0.0.0.0",
