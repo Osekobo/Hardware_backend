@@ -11,6 +11,7 @@ import os
 from sqlalchemy.orm import Session
 from database import get_db
 from models import Order, User
+from decimal import Decimal
 from auth.dependencies import get_current_user
 
 router = APIRouter()
@@ -69,8 +70,11 @@ async def initiate_payment(
         raise HTTPException(404, "Order not found")
     
     # Verify amount matches order total
-    if abs(order.total - payment.amount) > 0.01:
-        raise HTTPException(400, "Amount does not match order total")
+    order_total = float(order.total) if isinstance(order.total, Decimal) else order.total
+    payment_amount = float(payment.amount)
+    
+    if abs(order_total - payment_amount) > 0.01:
+        raise HTTPException(400, f"Amount does not match order total. Expected: {order_total}, Got: {payment_amount}")
     
     # Format phone number
     phone_number = payment.phone_number.strip()
