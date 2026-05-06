@@ -70,9 +70,9 @@ app.add_middleware(
 )
 
 # Trusted Host Middleware (Production only)
-if os.getenv("ENVIRONMENT", "development") == "production":
-    ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "kione-hardware-api.onrender.com,localhost").split(",")
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
+# if os.getenv("ENVIRONMENT", "development") == "production":
+#     ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "kione-hardware-api.onrender.com,localhost").split(",")
+#     app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
 
 # ========== Custom Exception Handlers ==========
 @app.exception_handler(HTTPException)
