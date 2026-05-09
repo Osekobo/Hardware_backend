@@ -15,7 +15,7 @@ class ProductCreate(BaseModel):
     price: float
     category: str
     subcategory: Optional[str] = None
-    image_url: str = None
+    file_image: str = None
     stock: int
     rating: float = 0.0
 
@@ -25,7 +25,7 @@ class ProductUpdate(BaseModel):
     price: float = None
     category: str = None
     subcategory: str = None
-    image_url: str = None
+    file_image: str = None
     stock: int = None
     rating: float = None
 
@@ -181,7 +181,7 @@ def quick_search(
         Product.id, 
         Product.name, 
         Product.price, 
-        Product.image_url
+        Product.file_image
     ).filter(
         or_(
             Product.name.ilike(f"%{q}%"),
@@ -194,7 +194,7 @@ def quick_search(
             "id": p.id,
             "name": p.name,
             "price": p.price,
-            "image_url": p.image_url
+            "file_image": p.file_image
         }
         for p in products
     ]
