@@ -1,8 +1,15 @@
 # config.py
 import os
 from dotenv import load_dotenv
+from pathlib import Path
 
 load_dotenv()
+UPLOAD_DIR = Path("static/uploads")
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+# Image settings
+ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
 class Settings:
     # Email settings (using Gmail as example)
