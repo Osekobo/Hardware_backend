@@ -1,4 +1,4 @@
-id,name,description,price,category,subcategory,image_url,stock,rating,created_at,updated_at
+id,name,description,price,category,subcategory,file_image,stock,rating,created_at,updated_at
 2,Cordless Drill Driver,20V Lithium-ion cordless drill with 2 batteries and charger. Variable speed control and LED light.,89.99,Power Tools,Drills,https://example.com/images/cordless-drill.jpg,75,4.8,2026-05-04 21:13:51.752079,2026-05-04 21:13:51.752083
 3,Stainless Steel Screws Assortment,300-piece stainless steel screw set with various sizes. Includes Phillips and flat head options.,19.99,Hardware,Fasteners,https://example.com/images/screw-set.jpg,500,4.3,2026-05-04 21:14:02.27316,2026-05-04 21:14:02.273168
 4,Premium Interior Paint - White,"High-quality matte finish interior paint. Low VOC, washable, and covers up to 400 sq ft per gallon.",34.99,Paint,Interior Paint,https://example.com/images/paint-white.jpg,200,4.6,2026-05-04 21:14:13.270221,2026-05-04 21:14:13.270225

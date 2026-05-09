@@ -1,3 +1,6 @@
+
+
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db
@@ -68,7 +71,7 @@ def get_cart(
                     "id": product.id,
                     "name": product.name,
                     "price": product.price,
-                    "image_url": product.image_url,
+                    "file_image": product.file_image,
                     "stock": product.stock
                 },
                 "quantity": item.quantity
