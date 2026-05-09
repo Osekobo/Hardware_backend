@@ -10,6 +10,8 @@ add_products_persistent.py
 update_images_pexels.py
 token.txt
 .env
+.env.local
+.env.production
 *.pyc
 __pycache__/
 venv/
