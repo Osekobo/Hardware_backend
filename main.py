@@ -6,8 +6,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
-from sqlalchemy import text  # ✅ Add this import
+from sqlalchemy import text
 import uvicorn
+from fastapi.staticfiles import StaticFiles
 
 # Load environment variables
 load_dotenv()
@@ -51,9 +52,19 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
     docs_url="/docs",
-    redoc_url="/redoc",  # ✅ Optional: change to /redoc for consistency
-    openapi_url="/openapi.json"  # ✅ Optional: change to /openapi.json
+    redoc_url="/redoc",
+    openapi_url="/openapi.json"
 )
+
+# ========== MOUNT STATIC FILES (AFTER app is created) ==========
+# Create uploads directory if it doesn't exist
+from pathlib import Path
+UPLOAD_DIR = Path("static/uploads")
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+# Mount static files for serving images
+app.mount("/static/uploads", StaticFiles(directory="static/uploads"), name="uploads")
+logger.info("Static files mounted at /static/uploads")
 
 # ========== Middleware Configuration ==========
 
@@ -114,8 +125,8 @@ async def root():
     return {
         "message": "Kione Hardware API is running",
         "version": app.version,
-        "docs": "/docs",  # ✅ Fixed
-        "redoc": "/redoc",  # ✅ Added
+        "docs": "/docs",
+        "redoc": "/redoc",
         "health": "/health",
         "status": "operational"
     }
@@ -135,7 +146,7 @@ async def health_check():
     # Check database connection
     try:
         db = SessionLocal()
-        db.execute(text("SELECT 1"))  # ✅ Fixed with text()
+        db.execute(text("SELECT 1"))
         db.close()
         health_status["services"]["database"] = "healthy"
     except Exception as e:
@@ -163,11 +174,9 @@ async def api_info():
         ]
     }
 
-
-
 # ========== Production Ready Configuration ==========
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
+    port = int(os.environ.get("PORT", 9000))
     environment = os.getenv("ENVIRONMENT", "development")
     
     if environment == "production":

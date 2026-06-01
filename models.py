@@ -42,7 +42,7 @@ class Product(Base):
     price = Column(Float, nullable=False)
     category = Column(String, index=True, nullable=False)
     subcategory = Column(String, nullable=True)
-    image_url = Column(String, nullable=True)
+    file_image = Column(String, nullable=True)
     stock = Column(Integer, default=0)
     rating = Column(Float, default=0.0)
     created_at = Column(DateTime, default=datetime.utcnow)
