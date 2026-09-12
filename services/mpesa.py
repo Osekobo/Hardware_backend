@@ -1,11 +1,13 @@
 import requests
 import base64
 from datetime import datetime
+import os
 
-CONSUMER_KEY = "key"
-CONSUMER_SECRET = "secret"
-SHORTCODE = "174379"
-PASSKEY = "passkey"
+CONSUMER_KEY = os.getenv("MPESA_CONSUMER_KEY", "")
+CONSUMER_SECRET = os.getenv("MPESA_CONSUMER_SECRET", "")
+SHORTCODE = os.getenv("MPESA_SHORTCODE", "")
+PASSKEY = os.getenv("MPESA_PASSKEY", "")
+CALLBACK_URL = os.getenv("MPESA_CALLBACK_URL", "")
 
 
 def get_token():
@@ -34,7 +36,7 @@ def stk_push(phone, amount, order_id):
         "PartyA": phone,
         "PartyB": SHORTCODE,
         "PhoneNumber": phone,
-        "CallBackURL": "https://yourdomain.com/mpesa/callback",
+        "CallBackURL": CALLBACK_URL,
         "AccountReference": str(order_id),
         "TransactionDesc": "Order Payment"
     }

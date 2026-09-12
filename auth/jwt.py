@@ -2,7 +2,7 @@ import os
 import jwt
 from datetime import datetime, timedelta
 
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-here")  # Add default
+SECRET_KEY = os.getenv("SECRET_KEY", "local-development-secret-change-me")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")  # Add default
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))  # Convert to INT
 

@@ -16,12 +16,11 @@ from auth.dependencies import get_current_user
 
 router = APIRouter()
 
-# M-Pesa Configuration
-CONSUMER_KEY = os.getenv("MPESA_CONSUMER_KEY", "kIM7nhs5kDq6YfzbN15kl2LMOX7zlEZ8lZAiA2lM9I0SKcIe")
-CONSUMER_SECRET = os.getenv("MPESA_CONSUMER_SECRET", "cOByOXYGzn7CAQtjNWTZH71XwKV9c777ssXbaJbrmngzUMAkLY2uNkGvaLW4qU5o")
-SHORT_CODE = os.getenv("MPESA_SHORTCODE", "174379")
-PASS_KEY = os.getenv("MPESA_PASSKEY", "bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919")
-CALLBACK_URL = os.getenv("MPESA_CALLBACK_URL", "https://your-backend-url.com/mpesa/callback")
+CONSUMER_KEY = os.getenv("MPESA_CONSUMER_KEY", "")
+CONSUMER_SECRET = os.getenv("MPESA_CONSUMER_SECRET", "")
+SHORT_CODE = os.getenv("MPESA_SHORTCODE", "")
+PASS_KEY = os.getenv("MPESA_PASSKEY", "")
+CALLBACK_URL = os.getenv("MPESA_CALLBACK_URL", "")
 
 # API URLs
 SAF_API_URL = "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials"

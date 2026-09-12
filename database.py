@@ -9,7 +9,7 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 # Get database URL
-SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./local.db")
 
 # Check if URL exists
 if not SQLALCHEMY_DATABASE_URL:
@@ -24,12 +24,15 @@ if "render.com" in SQLALCHEMY_DATABASE_URL and "sslmode" not in SQLALCHEMY_DATAB
     SQLALCHEMY_DATABASE_URL += "?sslmode=require"
 
 # Create synchronous engine
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL,
-    pool_pre_ping=True,
-    pool_recycle=3600,
-    echo=False  # Set to True for SQL debugging
-)
+engine_options = {
+    "pool_pre_ping": True,
+    "pool_recycle": 3600,
+    "echo": False,
+}
+if SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
+    engine_options["connect_args"] = {"check_same_thread": False}
+
+engine = create_engine(SQLALCHEMY_DATABASE_URL, **engine_options)
 
 # Test connection on startup
 try:

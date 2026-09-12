@@ -1,13 +1,17 @@
 import smtplib
+import os
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 
 def send_bulk_email(recipients, subject, message):
-    smtp_server = "smtp.gmail.com"
-    smtp_port = 587
-    sender_email = "your-email@gmail.com"
-    sender_password = "your-app-password"
+    smtp_server = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+    sender_email = os.getenv("SMTP_FROM_EMAIL") or os.getenv("SMTP_USERNAME")
+    sender_password = os.getenv("SMTP_PASSWORD")
+
+    if not sender_email or not sender_password:
+        raise RuntimeError("SMTP credentials are not configured")
 
     for recipient in recipients:
         msg = MIMEMultipart()
