@@ -8,7 +8,7 @@ import asyncio
 from database import get_db
 from models import Order, OrderItem, Product, Cart, User
 from utils.stock import reduce_stock
-from auth.dependencies import get_current_user
+from auth.dependencies import get_current_user, get_current_admin_user
 
 router = APIRouter()
 
@@ -207,7 +207,7 @@ def get_orders(
 @router.get("/admin/all")
 def get_all_orders(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_admin_user)
 ):
     """
     Get all orders (admin only)
@@ -284,7 +284,7 @@ def update_order_status(
     order_id: int,
     status_data: OrderStatusUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_admin_user)
 ):
     """
     Update order status (admin only)
@@ -452,7 +452,7 @@ def confirm_payment(
 async def send_newsletter_email(
     campaign: EmailCampaign,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_admin_user)
 ):
     """
     Send newsletter email campaign (admin only)
