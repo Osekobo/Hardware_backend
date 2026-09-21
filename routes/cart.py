@@ -23,25 +23,21 @@ def add_to_cart(
     db: Session = Depends(get_db), 
     user = Depends(get_current_user)
 ):
-    # Check if product exists
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Product not found")
     
-    # Check if item already in cart
     existing_item = db.query(Cart).filter(
         Cart.user_id == user.id,
         Cart.product_id == product_id
     ).first()
     
     if existing_item:
-        # Increase quantity by the requested amount
         existing_item.quantity += request.quantity
         db.commit()
         db.refresh(existing_item)
         return {"message": "Cart updated", "item": existing_item}
     else:
-        # Add new item to cart with specified quantity
         cart_item = Cart(
             user_id=user.id,
             product_id=product_id,
@@ -59,7 +55,6 @@ def get_cart(
 ):
     cart_items = db.query(Cart).filter(Cart.user_id == user.id).all()
     
-    # Join with product details
     result = []
     for item in cart_items:
         product = db.query(Product).filter(Product.id == item.product_id).first()

@@ -7,22 +7,16 @@ from sqlalchemy.orm import sessionmaker
 from models import Product
 from database import Base
 
-# Use your Render PostgreSQL connection string
-# Get this from Render Dashboard -> PostgreSQL Database -> Connection String
 RENDER_DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql://localhost/kione_hardware_db"
 )
 
 def add_products_to_render():
-    """Add products directly to Render PostgreSQL database from local machine"""
-    
-    # Create engine for Render database
     engine = create_engine(RENDER_DATABASE_URL)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     db = SessionLocal()
     
-    # Check existing products
     existing_count = db.query(Product).count()
     print(f"📊 Existing products in Render: {existing_count}")
     
@@ -37,7 +31,6 @@ def add_products_to_render():
             return
     
     products = [
-        # Building Materials
         {
             "name": "Portland Cement (50kg)",
             "description": "High-quality Portland cement for all construction needs. Perfect for foundations, walls, and general building work.",
@@ -87,7 +80,6 @@ def add_products_to_render():
             "stock": 200
         },
         
-        # Paints
         {
             "name": "Interior Emulsion Paint - White (20L)",
             "description": "High-quality interior paint with excellent coverage. Washable and durable finish for walls and ceilings.",
@@ -137,7 +129,6 @@ def add_products_to_render():
             "stock": 200
         },
         
-        # Hardware Tools
         {
             "name": "Professional Hammer (16oz)",
             "description": "Durable steel hammer with anti-slip fiberglass handle. Perfect for framing and general construction work.",
@@ -179,7 +170,6 @@ def add_products_to_render():
             "stock": 40
         },
         
-        # Plumbing
         {
             "name": "PVC Water Pipe 1/2 inch (6m)",
             "description": "High-quality PVC pipe for water supply and drainage. UV resistant and durable.",
@@ -197,7 +187,6 @@ def add_products_to_render():
             "stock": 50
         },
         
-        # Electrical
         {
             "name": "LED Bulb 12W (Cold White)",
             "description": "Energy-saving LED bulb with long lifespan. Provides bright, consistent light for any room.",
@@ -215,7 +204,6 @@ def add_products_to_render():
             "stock": 150
         },
         
-        # General Store
         {
             "name": "Wheelbarrow Heavy Duty",
             "description": "Sturdy wheelbarrow with pneumatic tire. Perfect for transporting building materials.",
@@ -240,7 +228,6 @@ def add_products_to_render():
     
     db.commit()
     
-    # Verify
     count = db.query(Product).count()
     categories = db.query(Product.category).distinct().all()
     

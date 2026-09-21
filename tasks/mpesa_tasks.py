@@ -24,7 +24,6 @@ def process_mpesa_callback(data):
 
     order = db.query(Order).filter(Order.id == order_id).first()
 
-    # FRAUD CHECK
     if not run_fraud_checks(order, amount, receipt):
         log_event("fraud_blocked", data)
         return

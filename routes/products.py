@@ -1,4 +1,3 @@
-# routes/products.py
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, File, UploadFile, Form
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, func
@@ -16,11 +15,8 @@ import os
 
 router = APIRouter()
 
-# ============= IMAGE CONFIGURATION =============
-# Import from config or define here
 from config import UPLOAD_DIR, ALLOWED_EXTENSIONS, MAX_FILE_SIZE
 
-# ============= PYDANTIC MODELS =============
 class ProductCreate(BaseModel):
     name: str
     description: str
@@ -44,19 +40,14 @@ class ProductUpdate(BaseModel):
 class BatchDeleteRequest(BaseModel):
     product_ids: List[int]
 
-# ============= IMAGE HELPER FUNCTIONS =============
 def validate_image(file_content: bytes, filename: str) -> tuple[bool, str]:
-    """Validate image file type and size"""
-    # Check size
     if len(file_content) > MAX_FILE_SIZE:
         return False, f"File too large. Maximum {MAX_FILE_SIZE // (1024*1024)}MB"
     
-    # Check extension
     ext = Path(filename).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
         return False, f"Invalid file type. Allowed: {', '.join(ALLOWED_EXTENSIONS)}"
     
-    # Verify it's actually an image
     try:
         Image.open(BytesIO(file_content))
         return True, "Valid"
@@ -64,17 +55,13 @@ def validate_image(file_content: bytes, filename: str) -> tuple[bool, str]:
         return False, "File is not a valid image"
 
 def save_image(file_content: bytes, original_filename: str) -> str:
-    """Save image to local storage and return the URL path"""
-    # Generate unique filename
     ext = Path(original_filename).suffix.lower()
     unique_filename = f"{uuid.uuid4().hex}{ext}"
     filepath = UPLOAD_DIR / unique_filename
     
-    # Save the file
     with open(filepath, "wb") as f:
         f.write(file_content)
     
-    # Create thumbnail (200x200) for better performance
     try:
         img = Image.open(filepath)
         thumbnail_filename = f"thumb_{unique_filename}"
@@ -84,30 +71,24 @@ def save_image(file_content: bytes, original_filename: str) -> str:
     except Exception as e:
         print(f"Thumbnail creation failed: {e}")
     
-    return f"/static/uploads/{unique_filename}"  # Return URL path
+    return f"/static/uploads/{unique_filename}"
 
 def delete_image(image_url: str):
-    """Delete image file and its thumbnail from storage"""
     if not image_url:
         return
     
     try:
-        # Extract filename from URL
         filename = image_url.split("/")[-1]
         
-        # Delete original
         original_path = UPLOAD_DIR / filename
         if original_path.exists():
             original_path.unlink()
         
-        # Delete thumbnail
         thumbnail_path = UPLOAD_DIR / f"thumb_{filename}"
         if thumbnail_path.exists():
             thumbnail_path.unlink()
     except Exception as e:
         print(f"Error deleting image: {e}")
-
-# ============= PRODUCT ENDPOINTS =============
 
 @router.post("/")
 def create_product(
@@ -122,22 +103,16 @@ def create_product(
     db: Session = Depends(get_db),
     user = Depends(get_current_admin_user)
 ):
-    """
-    Create a new product with image upload
-    """
-    # 1. Validate and save the image
     contents = file.file.read()
     is_valid, error_msg = validate_image(contents, file.filename)
     if not is_valid:
         raise HTTPException(status_code=400, detail=error_msg)
     
-    # Save image and get URL
     try:
         image_url = save_image(contents, file.filename)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save image: {str(e)}")
     
-    # 2. Create product in database
     product = Product(
         name=name,
         description=description,
@@ -162,31 +137,23 @@ def upload_product_image(
     db: Session = Depends(get_db),
     user = Depends(get_current_admin_user)
 ):
-    """
-    Upload/Update image for an existing product
-    """
-    # Find product
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Product not found")
     
-    # Validate new image
     contents = file.file.read()
     is_valid, error_msg = validate_image(contents, file.filename)
     if not is_valid:
         raise HTTPException(status_code=400, detail=error_msg)
     
-    # Delete old image if exists
     if product.file_image:
         delete_image(product.file_image)
     
-    # Save new image
     try:
         image_url = save_image(contents, file.filename)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save image: {str(e)}")
     
-    # Update product
     product.file_image = image_url
     product.updated_at = datetime.utcnow()
     db.commit()
@@ -197,14 +164,12 @@ def upload_product_image(
 
 @router.get("/categories")
 def get_categories(db: Session = Depends(get_db)):
-    """Get all unique categories from products"""
     categories = db.query(Product.category).distinct().filter(Product.category.isnot(None)).all()
     return [cat[0] for cat in categories if cat[0]]
 
 
 @router.get("/categories/counts")
 def get_categories_with_counts(db: Session = Depends(get_db)):
-    """Get all unique categories with product counts"""
     results = (
         db.query(Product.category, func.count(Product.id))
         .filter(Product.category.isnot(None))
@@ -226,20 +191,14 @@ def get_products(
     sort_by: str = Query("newest", description="Sort by: newest, price_asc, price_desc, name_asc, name_desc, rating, popular"),
     db: Session = Depends(get_db)
 ):
-    """
-    Get products with pagination, filtering, and sorting
-    """
-    # Cache for home page queries (5 minutes) - improves performance
     if skip == 0 and limit == 8 and not category and not search:
         response.headers["Cache-Control"] = "public, max-age=300"
     
     query = db.query(Product)
     
-    # Category filter
     if category and category != "all":
         query = query.filter(Product.category == category)
     
-    # Search filter
     if search:
         query = query.filter(
             or_(
@@ -248,13 +207,11 @@ def get_products(
             )
         )
     
-    # Price filter
     if min_price is not None:
         query = query.filter(Product.price >= min_price)
     if max_price is not None:
         query = query.filter(Product.price <= max_price)
     
-    # Sorting
     sort_mapping = {
         "price_asc": Product.price.asc(),
         "price_desc": Product.price.desc(),
@@ -266,13 +223,10 @@ def get_products(
     }
     query = query.order_by(sort_mapping.get(sort_by, Product.id.desc()))
     
-    # Get total count
     total = query.count()
     
-    # Apply pagination
     products = query.offset(skip).limit(limit).all()
     
-    # Calculate total pages
     total_pages = (total + limit - 1) // limit if total > 0 else 0
     
     return {
@@ -300,14 +254,10 @@ def update_product(
     db: Session = Depends(get_db), 
     user = Depends(get_current_admin_user)
 ):
-    """
-    Update product details (text fields only)
-    """
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Product not found")
     
-    # Update only provided fields
     update_data = data.dict(exclude_unset=True)
     
     for key, value in update_data.items():
@@ -325,14 +275,10 @@ def delete_product(
     db: Session = Depends(get_db), 
     user = Depends(get_current_admin_user)
 ):
-    """
-    Delete product and its associated image
-    """
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Product not found")
     
-    # Delete the image file from storage
     if product.file_image:
         delete_image(product.file_image)
     
@@ -347,9 +293,6 @@ def delete_product_image(
     db: Session = Depends(get_db),
     user = Depends(get_current_admin_user)
 ):
-    """
-    Delete only the product's image (not the product itself)
-    """
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Product not found")
@@ -357,10 +300,8 @@ def delete_product_image(
     if not product.file_image:
         raise HTTPException(404, "Product has no image")
     
-    # Delete image file
     delete_image(product.file_image)
     
-    # Remove image URL from database
     product.file_image = None
     product.updated_at = datetime.utcnow()
     db.commit()
@@ -374,19 +315,15 @@ def delete_products(
     db: Session = Depends(get_db),
     user = Depends(get_current_admin_user)
 ):
-    """Admin only - Delete multiple products at once"""
     if not request.product_ids:
         raise HTTPException(400, "No product IDs provided")
 
-    # Get all products to delete their images
     products_to_delete = db.query(Product).filter(Product.id.in_(request.product_ids)).all()
     
-    # Delete image files
     for product in products_to_delete:
         if product.file_image:
             delete_image(product.file_image)
     
-    # Delete from database
     deleted = db.query(Product).filter(Product.id.in_(request.product_ids)).delete(synchronize_session=False)
     db.commit()
     return {"message": f"Deleted {deleted} products"}
@@ -398,7 +335,6 @@ def quick_search(
     limit: int = Query(10, ge=1, le=50, description="Number of results to return"),
     db: Session = Depends(get_db)
 ):
-    """Quick search endpoint for autocomplete/fast search"""
     products = db.query(
         Product.id, 
         Product.name, 

@@ -1,4 +1,3 @@
-# models.py
 from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Enum, Boolean, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -27,7 +26,6 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    # Relationships
     orders = relationship("Order", back_populates="user", cascade="all, delete-orphan")
     cart_items = relationship("Cart", back_populates="user", cascade="all, delete-orphan")
 
@@ -47,7 +45,6 @@ class Product(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    # Relationships
     cart_items = relationship("Cart", back_populates="product", cascade="all, delete-orphan")
     order_items = relationship("OrderItem", back_populates="product")
 
@@ -62,7 +59,6 @@ class Cart(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    # Relationships
     user = relationship("User", back_populates="cart_items")
     product = relationship("Product", back_populates="cart_items")
 
@@ -76,13 +72,11 @@ class Order(Base):
     status = Column(Enum(OrderStatus), default=OrderStatus.pending)
     created_at = Column(DateTime, default=datetime.utcnow)
     
-    # M-Pesa fields
     mpesa_checkout_request_id = Column(String, nullable=True)
     mpesa_receipt = Column(String, nullable=True)
     paid_at = Column(DateTime, nullable=True)
     payment_error = Column(String, nullable=True)
     
-    # Relationships
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
     user = relationship("User", back_populates="orders")
 
@@ -94,9 +88,8 @@ class OrderItem(Base):
     order_id = Column(Integer, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False)
     product_id = Column(Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
     quantity = Column(Integer, nullable=False)
-    price = Column(Float, nullable=False)  # Price at time of purchase
+    price = Column(Float, nullable=False)
     
-    # Relationships
     order = relationship("Order", back_populates="items")
     product = relationship("Product", back_populates="order_items")
 
@@ -122,6 +115,5 @@ class AuditLog(Base):
     ip_address = Column(String, nullable=True)
     timestamp = Column(DateTime, default=datetime.utcnow)
     
-    # Relationship (optional)
     user = relationship("User")
 

@@ -1,4 +1,3 @@
-# utils/email.py
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -8,15 +7,12 @@ import logging
 logger = logging.getLogger(__name__)
 
 def send_reset_email(to_email: str, otp: str):
-    """Send password reset email with OTP"""
     try:
-        # Create message
         msg = MIMEMultipart()
         msg['From'] = settings.SMTP_FROM_EMAIL
         msg['To'] = to_email
         msg['Subject'] = "Password Reset Request - Kione Hardware"
         
-        # HTML email body
         html_body = f"""
         <!DOCTYPE html>
         <html>
@@ -56,7 +52,6 @@ def send_reset_email(to_email: str, otp: str):
         </html>
         """
         
-        # Plain text fallback
         text_body = f"""
         Password Reset Request
         
@@ -74,7 +69,6 @@ def send_reset_email(to_email: str, otp: str):
         msg.attach(MIMEText(text_body, 'plain'))
         msg.attach(MIMEText(html_body, 'html'))
         
-        # Send email
         with smtplib.SMTP(settings.SMTP_SERVER, settings.SMTP_PORT) as server:
             server.starttls()
             server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)

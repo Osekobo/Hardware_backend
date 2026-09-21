@@ -10,5 +10,4 @@ def retry_failed_payments():
     pending_orders = db.query(Order).filter(Order.status == "pending").all()
 
     for order in pending_orders:
-        # re-check logic or re-query M-Pesa API
         pass

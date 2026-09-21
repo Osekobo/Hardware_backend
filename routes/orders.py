@@ -1,4 +1,3 @@
-# routes/orders.py
 import asyncio
 import threading
 from datetime import datetime, timedelta
@@ -18,7 +17,6 @@ router = APIRouter()
 AUTO_CANCEL_MINUTES = 15
 
 
-# Pydantic models
 class OrderItemCreate(BaseModel):
     product_id: int
     quantity: int
@@ -34,13 +32,9 @@ class OrderStatusUpdate(BaseModel):
     status: str
 
 
-# Helper function to auto-cancel pending orders
 def auto_cancel_pending_order(order_id: int, timeout_minutes: int = AUTO_CANCEL_MINUTES):
-    """
-    Background task to automatically cancel pending orders after timeout
-    """
     async def cancel_order():
-        await asyncio.sleep(timeout_minutes * 60)  # Convert to seconds
+        await asyncio.sleep(timeout_minutes * 60)
 
         from database import SessionLocal
         db = SessionLocal()
@@ -76,15 +70,10 @@ def create_order(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Create an order before payment processing.
-    Stock is reserved at creation and restored if the order is cancelled or payment fails.
-    """
     if not order_data.items:
         raise HTTPException(400, "Order must have at least one item")
 
     try:
-        # Validate all items and compute total server-side (ignore client-supplied prices)
         products = {}
         total = 0.0
         for item in order_data.items:
@@ -100,16 +89,14 @@ def create_order(
             products[item.product_id] = product
             total += product.price * item.quantity
 
-        # Create order with pending status
         order = Order(
             user_id=current_user.id,
             total=total,
             status="pending"
         )
         db.add(order)
-        db.flush()  # Get order ID without committing
+        db.flush()
 
-        # Reserve stock and create order items
         for item in order_data.items:
             product = products[item.product_id]
             product.stock -= item.quantity
@@ -123,7 +110,6 @@ def create_order(
         db.commit()
         db.refresh(order)
 
-        # Schedule auto-cancellation after 15 minutes
         schedule_auto_cancel(order.id)
 
         return {
@@ -143,9 +129,6 @@ def create_order(
 
 @router.post("/checkout")
 def checkout(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """
-    Legacy checkout endpoint - processes cart directly
-    """
     cart = db.query(Cart).filter(Cart.user_id == user.id).all()
 
     if not cart:
@@ -181,7 +164,6 @@ def checkout(db: Session = Depends(get_db), user: User = Depends(get_current_use
     order.total = total
     db.commit()
 
-    # Schedule auto-cancellation after 15 minutes
     schedule_auto_cancel(order.id)
 
     return {"order_id": order.id, "total": total, "status": "pending"}
@@ -192,9 +174,6 @@ def get_orders(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Get all orders for the current user
-    """
     orders = db.query(Order).filter(Order.user_id == current_user.id).order_by(Order.created_at.desc()).all()
 
     result = []
@@ -228,9 +207,6 @@ def get_all_orders(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user)
 ):
-    """
-    Get all orders (admin only)
-    """
     orders = db.query(Order).order_by(Order.created_at.desc()).all()
 
     result = []
@@ -267,9 +243,6 @@ def get_order(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Get a specific order by ID
-    """
     order = db.query(Order).filter(Order.id == order_id).first()
 
     if not order:
@@ -293,7 +266,8 @@ def get_order(
             {
                 "product_id": item.product_id,
                 "quantity": item.quantity,
-                "price": item.price
+                "price": item.price,
+                "product_name": _get_product_name(db, item.product_id)
             }
             for item in items
         ]
@@ -307,9 +281,6 @@ def update_order_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user)
 ):
-    """
-    Update order status (admin only)
-    """
     valid_statuses = {'pending', 'paid', 'shipped', 'delivered', 'cancelled', 'payment_failed'}
     if status_data.status not in valid_statuses:
         raise HTTPException(400, f"Invalid status: {status_data.status}")
@@ -330,9 +301,6 @@ def cancel_order(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Cancel a pending order - CHANGES STATUS, DOES NOT DELETE
-    """
     order = db.query(Order).filter(
         Order.id == order_id,
         Order.user_id == current_user.id
@@ -344,7 +312,6 @@ def cancel_order(
     if order.status != 'pending':
         raise HTTPException(400, f"Cannot cancel order with status: {order.status}")
 
-    # ✅ Change status, DO NOT delete
     order.status = 'cancelled'
     order.payment_error = "User cancelled the order"
     restore_stock(order, db)
@@ -359,10 +326,6 @@ def retry_payment(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Retry payment for a cancelled or failed order.
-    Creates a new order with the same items and re-reserves stock.
-    """
     old_order = db.query(Order).filter(
         Order.id == order_id,
         Order.user_id == current_user.id
@@ -379,7 +342,6 @@ def retry_payment(
     if not old_items:
         raise HTTPException(400, "Order has no items")
 
-    # Verify stock is still available before re-reserving
     new_items = []
     total = 0.0
     for item in old_items:
@@ -391,7 +353,6 @@ def retry_payment(
         new_items.append((product, item))
         total += product.price * item.quantity
 
-    # Create new order with same items
     new_order = Order(
         user_id=current_user.id,
         total=total,
@@ -400,7 +361,6 @@ def retry_payment(
     db.add(new_order)
     db.flush()
 
-    # Reserve stock and copy order items
     for product, item in new_items:
         product.stock -= item.quantity
         db.add(OrderItem(
@@ -413,7 +373,6 @@ def retry_payment(
     db.commit()
     db.refresh(new_order)
 
-    # Schedule auto-cancellation for new order
     schedule_auto_cancel(new_order.id)
 
     print(f"🔄 Retry payment for order #{order_id} -> New order #{new_order.id}")
@@ -431,9 +390,6 @@ def cleanup_pending_orders(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user)
 ):
-    """
-    Clean up old pending orders (admin only)
-    """
     cutoff_time = datetime.utcnow() - timedelta(minutes=AUTO_CANCEL_MINUTES)
 
     old_pending_orders = db.query(Order).filter(
@@ -465,10 +421,6 @@ def confirm_payment(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Manually confirm payment (for testing or fallback).
-    Stock is already reserved at order creation, so it is not reduced again here.
-    """
     order = db.query(Order).filter(Order.id == order_id).first()
 
     if not order:

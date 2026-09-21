@@ -9,7 +9,6 @@ router = APIRouter()
 
 @router.post("/")
 def upload(file: UploadFile = File(...), user=Depends(get_current_admin_user)):
-    """Upload an image to Cloudinary (admin only)"""
     contents = file.file.read()
 
     is_valid, error_msg = validate_image(contents, file.filename)

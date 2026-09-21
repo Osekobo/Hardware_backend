@@ -8,22 +8,17 @@ import logging
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-# Get database URL
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Check if URL exists
 if not SQLALCHEMY_DATABASE_URL:
     raise ValueError("DATABASE_URL environment variable is not set")
 
-# Remove asyncpg if present (only for PostgreSQL URLs)
 if "asyncpg" in SQLALCHEMY_DATABASE_URL:
     SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("+asyncpg", "")
 
-# Ensure SSL for Render PostgreSQL
 if "render.com" in SQLALCHEMY_DATABASE_URL and "sslmode" not in SQLALCHEMY_DATABASE_URL:
     SQLALCHEMY_DATABASE_URL += "?sslmode=require"
 
-# Create synchronous engine
 engine_options = {
     "pool_pre_ping": True,
     "pool_recycle": 3600,
@@ -34,7 +29,6 @@ if SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL, **engine_options)
 
-# Test connection on startup
 try:
     with engine.connect() as conn:
         result = conn.execute(text("SELECT 1"))

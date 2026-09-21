@@ -10,24 +10,19 @@ from sqlalchemy import text
 import uvicorn
 from fastapi.staticfiles import StaticFiles
 
-# Load environment variables
 load_dotenv()
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Import database and routers
 from database import Base, engine, SessionLocal
 from routes import auth, products, cart, orders, mpesa, upload, admin
 
-# ========== Lifespan Event Handler ==========
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Create tables and log startup
     logger.info("Starting up Kione Hardware API...")
     try:
         Base.metadata.create_all(bind=engine)
@@ -36,9 +31,8 @@ async def lifespan(app: FastAPI):
         logger.error(f"Database initialization error: {e}")
         raise
     
-    yield  # Application runs here
+    yield
     
-    # Shutdown: Clean up resources
     logger.info("Shutting down Kione Hardware API...")
     try:
         engine.dispose()
@@ -46,7 +40,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Error during shutdown: {e}")
 
-# ========== Initialize FastAPI App ==========
 app = FastAPI(
     title="Kione Hardware API",
     version="1.0.0",
@@ -56,19 +49,13 @@ app = FastAPI(
     openapi_url="/openapi.json"
 )
 
-# ========== MOUNT STATIC FILES (AFTER app is created) ==========
-# Create uploads directory if it doesn't exist
 from pathlib import Path
 UPLOAD_DIR = Path("static/uploads")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-# Mount static files for serving images
 app.mount("/static/uploads", StaticFiles(directory="static/uploads"), name="uploads")
 logger.info("Static files mounted at /static/uploads")
 
-# ========== Middleware Configuration ==========
-
-# CORS Configuration
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8001").split(",")
 app.add_middleware(
     CORSMiddleware,
@@ -80,12 +67,6 @@ app.add_middleware(
     max_age=3600,
 )
 
-# Trusted Host Middleware (Production only)
-# if os.getenv("ENVIRONMENT", "development") == "production":
-#     ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "kione-hardware-api.onrender.com,localhost").split(",")
-#     app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
-
-# ========== Custom Exception Handlers ==========
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc):
     logger.warning(f"HTTP {exc.status_code}: {exc.detail}")
@@ -102,7 +83,6 @@ async def general_exception_handler(request, exc):
         content={"detail": "Internal server error", "status_code": 500}
     )
 
-# ========== Include Routers ==========
 routers = [
     (auth.router, "/auth", ["Authentication"]),
     (products.router, "/products", ["Products"]),
@@ -117,10 +97,8 @@ for router, prefix, tags in routers:
     app.include_router(router, prefix=prefix, tags=tags)
     logger.info(f"Registered router: {prefix}")
 
-# ========== Health Check Endpoints ==========
 @app.get("/", tags=["Root"])
 async def root():
-    """Root endpoint with API information"""
     return {
         "message": "Kione Hardware API is running",
         "version": app.version,
@@ -132,7 +110,6 @@ async def root():
 
 @app.get("/health", tags=["Health"])
 async def health_check():
-    """Comprehensive health check endpoint"""
     health_status = {
         "status": "healthy",
         "timestamp": __import__("datetime").datetime.utcnow().isoformat(),
@@ -142,7 +119,6 @@ async def health_check():
         }
     }
     
-    # Check database connection
     try:
         db = SessionLocal()
         db.execute(text("SELECT 1"))
@@ -153,7 +129,6 @@ async def health_check():
         health_status["status"] = "degraded"
         health_status["services"]["database"] = "unhealthy"
     
-    # Return 503 if database is unhealthy
     if health_status["services"]["database"] != "healthy":
         return JSONResponse(status_code=503, content=health_status)
     
@@ -161,7 +136,6 @@ async def health_check():
 
 @app.get("/api/info", tags=["Info"])
 async def api_info():
-    """Detailed API information"""
     return {
         "name": "Kione Hardware API",
         "version": app.version,
@@ -173,7 +147,6 @@ async def api_info():
         ]
     }
 
-# ========== Production Ready Configuration ==========
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 9000))
     environment = os.getenv("ENVIRONMENT", "development")

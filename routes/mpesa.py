@@ -1,4 +1,3 @@
-# routes/mpesa.py
 import base64
 import json
 import logging
@@ -28,7 +27,6 @@ SHORT_CODE = os.getenv("MPESA_SHORTCODE", "")
 PASS_KEY = os.getenv("MPESA_PASSKEY", "")
 CALLBACK_URL = os.getenv("MPESA_CALLBACK_URL", "")
 
-# Switch between sandbox and production by setting MPESA_API_BASE_URL
 MPESA_API_BASE_URL = os.getenv("MPESA_API_BASE_URL", "https://sandbox.safaricom.co.ke").rstrip("/")
 SAF_API_URL = f"{MPESA_API_BASE_URL}/oauth/v1/generate?grant_type=client_credentials"
 SAF_STK_PUSH_URL = f"{MPESA_API_BASE_URL}/mpesa/stkpush/v1/processrequest"
@@ -41,7 +39,6 @@ class MpesaPaymentRequest(BaseModel):
 
 
 def normalize_phone_number(phone: str) -> str:
-    """Normalize a Kenyan phone number to the 254... international format."""
     if not phone:
         raise HTTPException(400, "Phone number is required")
 
@@ -85,7 +82,6 @@ def ensure_mpesa_configured():
 
 
 def get_mpesa_access_token():
-    """Get M-Pesa access token"""
     if not CONSUMER_KEY or not CONSUMER_SECRET:
         raise HTTPException(503, "M-Pesa credentials are not configured")
 
@@ -108,7 +104,6 @@ def get_mpesa_access_token():
 
 
 def generate_password(short_code, pass_key, timestamp):
-    """Generate password for STK push"""
     password_str = short_code + pass_key + timestamp
     password_bytes = password_str.encode('utf-8')
     return base64.b64encode(password_bytes).decode('utf-8')
@@ -120,10 +115,8 @@ async def initiate_payment(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Initiate M-Pesa STK Push payment"""
     ensure_mpesa_configured()
 
-    # Get order
     order = db.query(Order).filter(
         Order.id == payment.order_id,
         Order.user_id == current_user.id
@@ -138,24 +131,19 @@ async def initiate_payment(
     if order.status != 'pending':
         raise HTTPException(400, f"Cannot request payment for order with status: {order.status}")
 
-    # Verify amount matches order total
     order_total = float(order.total) if isinstance(order.total, Decimal) else order.total
     payment_amount = float(payment.amount)
 
     if abs(order_total - payment_amount) > 0.01:
         raise HTTPException(400, f"Amount does not match order total. Expected: {order_total}, Got: {payment_amount}")
 
-    # Format phone number
     phone_number = normalize_phone_number(payment.phone_number)
 
-    # Get access token
     access_token = get_mpesa_access_token()
 
-    # Generate timestamp and password
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
     password = generate_password(SHORT_CODE, PASS_KEY, timestamp)
 
-    # Prepare STK push data
     stk_data = {
         "BusinessShortCode": SHORT_CODE,
         "Password": password,
@@ -175,7 +163,6 @@ async def initiate_payment(
         "Content-Type": "application/json"
     }
 
-    # Make STK push request
     try:
         response = requests.post(SAF_STK_PUSH_URL, json=stk_data, headers=headers, timeout=15)
         response.raise_for_status()
@@ -184,7 +171,6 @@ async def initiate_payment(
         logger.error(f"STK push request failed: {e}")
         raise HTTPException(502, "Failed to reach M-Pesa API")
 
-    # Update order with M-Pesa request ID
     if response_data.get('ResponseCode') == '0':
         order.mpesa_checkout_request_id = response_data.get('CheckoutRequestID')
         order.payment_error = None
@@ -208,8 +194,6 @@ async def initiate_payment(
 
 @router.post("/callback")
 async def mpesa_callback(request: Request, db: Session = Depends(get_db)):
-    """Handle M-Pesa callback after payment (webhook called by Safaricom)."""
-    # Optional IP allow-listing. Enable in production by setting MPESA_ALLOWED_IPS.
     allowed_ips = [ip.strip() for ip in os.getenv("MPESA_ALLOWED_IPS", "").split(",") if ip.strip()]
     if allowed_ips:
         forwarded = request.headers.get("x-forwarded-for")
@@ -225,7 +209,6 @@ async def mpesa_callback(request: Request, db: Session = Depends(get_db)):
 
         callback_data = json.loads(raw_body)
 
-        # Extract callback data
         body = callback_data.get('Body', {})
         stk_callback = body.get('stkCallback', {})
 
@@ -236,7 +219,6 @@ async def mpesa_callback(request: Request, db: Session = Depends(get_db)):
         if not checkout_request_id:
             return {"ResultCode": 1, "ResultDesc": "Missing CheckoutRequestID"}
 
-        # Find order by checkout request ID
         order = db.query(Order).filter(
             Order.mpesa_checkout_request_id == checkout_request_id
         ).first()
@@ -244,20 +226,17 @@ async def mpesa_callback(request: Request, db: Session = Depends(get_db)):
         if not order:
             return {"ResultCode": 1, "ResultDesc": "Order not found"}
 
-        # Idempotency: already paid
         if order.status == 'paid':
             return {"ResultCode": 0, "ResultDesc": "Success"}
 
-        # Extract payment details from callback metadata
         callback_metadata = stk_callback.get('CallbackMetadata', {}) or {}
         items = callback_metadata.get('Item', []) or []
         metadata = {item.get('Name'): item.get('Value') for item in items if isinstance(item, dict)}
 
-        if result_code == 0:  # Payment successful
+        if result_code == 0:
             mpesa_receipt = metadata.get('MpesaReceiptNumber')
             amount_paid = metadata.get('Amount')
 
-            # FRAUD CHECK 1: paid amount must match order total
             order_total = float(order.total) if isinstance(order.total, Decimal) else order.total
             if amount_paid is None or abs(float(amount_paid) - order_total) > 0.01:
                 order.status = 'payment_failed'
@@ -266,7 +245,6 @@ async def mpesa_callback(request: Request, db: Session = Depends(get_db)):
                 restore_stock(order, db)
                 return {"ResultCode": 1, "ResultDesc": "Amount mismatch"}
 
-            # FRAUD CHECK 2: duplicate receipt number
             if mpesa_receipt:
                 existing = db.query(Order).filter(
                     Order.mpesa_receipt == mpesa_receipt,
@@ -279,7 +257,6 @@ async def mpesa_callback(request: Request, db: Session = Depends(get_db)):
                     restore_stock(order, db)
                     return {"ResultCode": 1, "ResultDesc": "Duplicate receipt"}
 
-            # Update order status
             order.status = 'paid'
             order.mpesa_receipt = mpesa_receipt
             order.paid_at = datetime.now()
@@ -289,7 +266,7 @@ async def mpesa_callback(request: Request, db: Session = Depends(get_db)):
             logger.info(f"Order #{order.id} marked as paid (receipt {mpesa_receipt})")
 
             return {"ResultCode": 0, "ResultDesc": "Success"}
-        else:  # Payment failed
+        else:
             order.status = 'payment_failed'
             order.payment_error = result_desc
             db.commit()
@@ -310,7 +287,6 @@ async def check_payment_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Check payment status for a checkout request"""
     order = db.query(Order).filter(
         Order.mpesa_checkout_request_id == checkout_request_id,
         Order.user_id == current_user.id
