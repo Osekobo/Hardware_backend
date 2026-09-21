@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_, func
 from database import get_db
 from models import Product
-from auth.dependencies import get_current_user
+from auth.dependencies import get_current_admin_user
 from pydantic import BaseModel
 from typing import Optional, List
 from pathlib import Path
@@ -120,7 +120,7 @@ def create_product(
     rating: float = Form(0.0),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user)
+    user = Depends(get_current_admin_user)
 ):
     """
     Create a new product with image upload
@@ -160,7 +160,7 @@ def upload_product_image(
     product_id: int,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user)
+    user = Depends(get_current_admin_user)
 ):
     """
     Upload/Update image for an existing product
@@ -200,6 +200,18 @@ def get_categories(db: Session = Depends(get_db)):
     """Get all unique categories from products"""
     categories = db.query(Product.category).distinct().filter(Product.category.isnot(None)).all()
     return [cat[0] for cat in categories if cat[0]]
+
+
+@router.get("/categories/counts")
+def get_categories_with_counts(db: Session = Depends(get_db)):
+    """Get all unique categories with product counts"""
+    results = (
+        db.query(Product.category, func.count(Product.id))
+        .filter(Product.category.isnot(None))
+        .group_by(Product.category)
+        .all()
+    )
+    return [{"name": name, "count": count} for name, count in results if name]
 
 
 @router.get("/")
@@ -286,7 +298,7 @@ def update_product(
     product_id: int, 
     data: ProductUpdate, 
     db: Session = Depends(get_db), 
-    user = Depends(get_current_user)
+    user = Depends(get_current_admin_user)
 ):
     """
     Update product details (text fields only)
@@ -311,7 +323,7 @@ def update_product(
 def delete_product(
     product_id: int, 
     db: Session = Depends(get_db), 
-    user = Depends(get_current_user)
+    user = Depends(get_current_admin_user)
 ):
     """
     Delete product and its associated image
@@ -333,7 +345,7 @@ def delete_product(
 def delete_product_image(
     product_id: int,
     db: Session = Depends(get_db),
-    user = Depends(get_current_user)
+    user = Depends(get_current_admin_user)
 ):
     """
     Delete only the product's image (not the product itself)
@@ -360,12 +372,12 @@ def delete_product_image(
 def delete_products(
     request: BatchDeleteRequest,
     db: Session = Depends(get_db),
-    user = Depends(get_current_user)
+    user = Depends(get_current_admin_user)
 ):
     """Admin only - Delete multiple products at once"""
-    if not user.is_admin:
-        raise HTTPException(403, "Admin access required")
-    
+    if not request.product_ids:
+        raise HTTPException(400, "No product IDs provided")
+
     # Get all products to delete their images
     products_to_delete = db.query(Product).filter(Product.id.in_(request.product_ids)).all()
     

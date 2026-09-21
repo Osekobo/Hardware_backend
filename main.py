@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 # Import database and routers
 from database import Base, engine, SessionLocal
-from routes import auth, products, cart, orders, mpesa, upload, admin, newsletter
+from routes import auth, products, cart, orders, mpesa, upload, admin
 
 # ========== Lifespan Event Handler ==========
 @asynccontextmanager
@@ -111,7 +111,6 @@ routers = [
     (mpesa.router, "/mpesa", ["M-Pesa"]),
     (upload.router, "/upload", ["Uploads"]),
     (admin.router, "/admin", ["Admin"]),
-    (newsletter.router, "/newsletter", ["Newsletter"]),
 ]
 
 for router, prefix, tags in routers:

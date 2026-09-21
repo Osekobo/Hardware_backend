@@ -30,7 +30,6 @@ class User(Base):
     # Relationships
     orders = relationship("Order", back_populates="user", cascade="all, delete-orphan")
     cart_items = relationship("Cart", back_populates="user", cascade="all, delete-orphan")
-    addresses = relationship("Address", back_populates="user", cascade="all, delete-orphan")
 
 
 class Product(Base):
@@ -102,30 +101,6 @@ class OrderItem(Base):
     product = relationship("Product", back_populates="order_items")
 
 
-class Address(Base):
-    __tablename__ = "addresses"
-
-    id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    full_name = Column(String, nullable=False)
-    phone_number = Column(String, nullable=False)
-    address_line1 = Column(String, nullable=False)
-    address_line2 = Column(String, nullable=True)
-    city = Column(String, nullable=False)
-    county = Column(String, nullable=False)
-    postal_code = Column(String, nullable=True)
-    landmark = Column(String, nullable=True)
-    latitude = Column(Float, nullable=True)
-    longitude = Column(Float, nullable=True)
-    google_place_id = Column(String, nullable=True)
-    is_default = Column(Integer, default=0)  # 1 for default, 0 otherwise
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
-    # Relationships
-    user = relationship("User", back_populates="addresses")
-
-
 class PasswordResetOTP(Base):
     __tablename__ = "password_reset_otps"
 
@@ -135,15 +110,6 @@ class PasswordResetOTP(Base):
     is_used = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     expires_at = Column(DateTime, nullable=False)
-
-
-class NewsletterSubscriber(Base):
-    __tablename__ = "newsletter_subscribers"
-
-    id = Column(Integer, primary_key=True)
-    email = Column(String, unique=True, index=True, nullable=False)
-    subscribed_at = Column(DateTime, default=datetime.utcnow)
-    is_active = Column(Integer, default=1)  # 1 for active, 0 for unsubscribed
 
 
 class AuditLog(Base):

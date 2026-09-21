@@ -1,20 +1,26 @@
 # routes/mpesa.py
-from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
-from typing import Optional
-import requests
-from requests.auth import HTTPBasicAuth
-from datetime import datetime
 import base64
+import json
+import logging
 import math
 import os
+import re
+from datetime import datetime
+from decimal import Decimal
+
+import requests
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
+from requests.auth import HTTPBasicAuth
 from sqlalchemy.orm import Session
+
+from auth.dependencies import get_current_user
 from database import get_db
 from models import Order, User
-from decimal import Decimal
-from auth.dependencies import get_current_user
+from utils.stock import restore_stock
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 CONSUMER_KEY = os.getenv("MPESA_CONSUMER_KEY", "")
 CONSUMER_SECRET = os.getenv("MPESA_CONSUMER_SECRET", "")
@@ -22,35 +28,91 @@ SHORT_CODE = os.getenv("MPESA_SHORTCODE", "")
 PASS_KEY = os.getenv("MPESA_PASSKEY", "")
 CALLBACK_URL = os.getenv("MPESA_CALLBACK_URL", "")
 
-# API URLs
-SAF_API_URL = "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials"
-SAF_STK_PUSH_URL = "https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest"
+# Switch between sandbox and production by setting MPESA_API_BASE_URL
+MPESA_API_BASE_URL = os.getenv("MPESA_API_BASE_URL", "https://sandbox.safaricom.co.ke").rstrip("/")
+SAF_API_URL = f"{MPESA_API_BASE_URL}/oauth/v1/generate?grant_type=client_credentials"
+SAF_STK_PUSH_URL = f"{MPESA_API_BASE_URL}/mpesa/stkpush/v1/processrequest"
+
 
 class MpesaPaymentRequest(BaseModel):
     amount: float
     phone_number: str
     order_id: int
 
+
+def normalize_phone_number(phone: str) -> str:
+    """Normalize a Kenyan phone number to the 254... international format."""
+    if not phone:
+        raise HTTPException(400, "Phone number is required")
+
+    phone = re.sub(r"[\s\-\(\)]", "", phone.strip())
+
+    if phone.startswith("+"):
+        phone = phone[1:]
+
+    if phone.startswith("0"):
+        phone = "254" + phone[1:]
+    elif phone.startswith("254") and len(phone) == 12:
+        pass
+    elif phone.startswith("7") or phone.startswith("1"):
+        phone = "254" + phone
+    else:
+        raise HTTPException(400, "Invalid phone number format")
+
+    if not re.fullmatch(r"254[17]\d{8}", phone):
+        raise HTTPException(400, "Invalid Kenyan phone number")
+
+    return phone
+
+
+def ensure_mpesa_configured():
+    missing = [
+        name
+        for name, value in (
+            ("MPESA_CONSUMER_KEY", CONSUMER_KEY),
+            ("MPESA_CONSUMER_SECRET", CONSUMER_SECRET),
+            ("MPESA_SHORTCODE", SHORT_CODE),
+            ("MPESA_PASSKEY", PASS_KEY),
+            ("MPESA_CALLBACK_URL", CALLBACK_URL),
+        )
+        if not value
+    ]
+    if missing:
+        raise HTTPException(
+            status_code=503,
+            detail=f"M-Pesa is not configured. Missing: {', '.join(missing)}",
+        )
+
+
 def get_mpesa_access_token():
     """Get M-Pesa access token"""
+    if not CONSUMER_KEY or not CONSUMER_SECRET:
+        raise HTTPException(503, "M-Pesa credentials are not configured")
+
     try:
         response = requests.get(
             SAF_API_URL,
             auth=HTTPBasicAuth(CONSUMER_KEY, CONSUMER_SECRET),
+            timeout=10,
         )
         response.raise_for_status()
         token = response.json().get('access_token')
         if not token:
             raise HTTPException(500, "Failed to get access token")
         return token
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(500, f"M-Pesa authentication failed: {str(e)}")
+        logger.error(f"M-Pesa authentication failed: {e}")
+        raise HTTPException(500, "M-Pesa authentication failed")
+
 
 def generate_password(short_code, pass_key, timestamp):
     """Generate password for STK push"""
     password_str = short_code + pass_key + timestamp
     password_bytes = password_str.encode('utf-8')
     return base64.b64encode(password_bytes).decode('utf-8')
+
 
 @router.post("/stkpush")
 async def initiate_payment(
@@ -59,70 +121,75 @@ async def initiate_payment(
     current_user: User = Depends(get_current_user)
 ):
     """Initiate M-Pesa STK Push payment"""
+    ensure_mpesa_configured()
+
     # Get order
     order = db.query(Order).filter(
         Order.id == payment.order_id,
         Order.user_id == current_user.id
     ).first()
-    
+
     if not order:
         raise HTTPException(404, "Order not found")
-    
+
+    if order.status == 'paid':
+        raise HTTPException(400, "Order is already paid")
+
+    if order.status != 'pending':
+        raise HTTPException(400, f"Cannot request payment for order with status: {order.status}")
+
     # Verify amount matches order total
     order_total = float(order.total) if isinstance(order.total, Decimal) else order.total
     payment_amount = float(payment.amount)
-    
+
     if abs(order_total - payment_amount) > 0.01:
         raise HTTPException(400, f"Amount does not match order total. Expected: {order_total}, Got: {payment_amount}")
-    
+
     # Format phone number
-    phone_number = payment.phone_number.strip()
-    if phone_number.startswith('0'):
-        phone_number = '254' + phone_number[1:]
-    elif phone_number.startswith('+'):
-        phone_number = phone_number[1:]
-    
+    phone_number = normalize_phone_number(payment.phone_number)
+
     # Get access token
     access_token = get_mpesa_access_token()
-    
+
     # Generate timestamp and password
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
     password = generate_password(SHORT_CODE, PASS_KEY, timestamp)
-    
+
     # Prepare STK push data
     stk_data = {
         "BusinessShortCode": SHORT_CODE,
         "Password": password,
         "Timestamp": timestamp,
         "TransactionType": "CustomerPayBillOnline",
-        "Amount": int(math.ceil(payment.amount)),
+        "Amount": int(math.ceil(payment_amount)),
         "PartyA": phone_number,
         "PartyB": SHORT_CODE,
         "PhoneNumber": phone_number,
         "CallBackURL": CALLBACK_URL,
-        "AccountReference": f"ORDER{payment.order_id}",
-        "TransactionDesc": f"Payment for Order #{payment.order_id}"
+        "AccountReference": f"ORDER{order.id}",
+        "TransactionDesc": f"Payment for Order #{order.id}"
     }
-    
+
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json"
     }
-    
+
     # Make STK push request
-    response = requests.post(
-        SAF_STK_PUSH_URL,
-        json=stk_data,
-        headers=headers
-    )
-    
-    response_data = response.json()
-    
+    try:
+        response = requests.post(SAF_STK_PUSH_URL, json=stk_data, headers=headers, timeout=15)
+        response.raise_for_status()
+        response_data = response.json()
+    except Exception as e:
+        logger.error(f"STK push request failed: {e}")
+        raise HTTPException(502, "Failed to reach M-Pesa API")
+
     # Update order with M-Pesa request ID
     if response_data.get('ResponseCode') == '0':
         order.mpesa_checkout_request_id = response_data.get('CheckoutRequestID')
+        order.payment_error = None
         db.commit()
-        
+
         return {
             "success": True,
             "message": "STK push sent successfully",
@@ -138,56 +205,104 @@ async def initiate_payment(
             "response_description": response_data.get('ResponseDescription')
         }
 
+
 @router.post("/callback")
 async def mpesa_callback(request: Request, db: Session = Depends(get_db)):
-    """Handle M-Pesa callback after payment"""
+    """Handle M-Pesa callback after payment (webhook called by Safaricom)."""
+    # Optional IP allow-listing. Enable in production by setting MPESA_ALLOWED_IPS.
+    allowed_ips = [ip.strip() for ip in os.getenv("MPESA_ALLOWED_IPS", "").split(",") if ip.strip()]
+    if allowed_ips:
+        forwarded = request.headers.get("x-forwarded-for")
+        client_ip = (forwarded.split(",")[0].strip() if forwarded else request.client.host) if request.client else None
+        if client_ip not in allowed_ips:
+            logger.warning(f"Rejected M-Pesa callback from unauthorized IP: {client_ip}")
+            raise HTTPException(403, "Forbidden")
+
     try:
-        callback_data = await request.json()
-        
+        raw_body = await request.body()
+        if not raw_body:
+            return {"ResultCode": 1, "ResultDesc": "Empty payload"}
+
+        callback_data = json.loads(raw_body)
+
         # Extract callback data
         body = callback_data.get('Body', {})
         stk_callback = body.get('stkCallback', {})
-        
+
         result_code = stk_callback.get('ResultCode')
         result_desc = stk_callback.get('ResultDesc')
         checkout_request_id = stk_callback.get('CheckoutRequestID')
-        
+
+        if not checkout_request_id:
+            return {"ResultCode": 1, "ResultDesc": "Missing CheckoutRequestID"}
+
         # Find order by checkout request ID
         order = db.query(Order).filter(
             Order.mpesa_checkout_request_id == checkout_request_id
         ).first()
-        
+
         if not order:
             return {"ResultCode": 1, "ResultDesc": "Order not found"}
-        
+
+        # Idempotency: already paid
+        if order.status == 'paid':
+            return {"ResultCode": 0, "ResultDesc": "Success"}
+
+        # Extract payment details from callback metadata
+        callback_metadata = stk_callback.get('CallbackMetadata', {}) or {}
+        items = callback_metadata.get('Item', []) or []
+        metadata = {item.get('Name'): item.get('Value') for item in items if isinstance(item, dict)}
+
         if result_code == 0:  # Payment successful
-            # Extract payment details
-            callback_metadata = stk_callback.get('CallbackMetadata', {})
-            items = callback_metadata.get('Item', [])
-            
-            mpesa_receipt = None
-            for item in items:
-                if item.get('Name') == 'MpesaReceiptNumber':
-                    mpesa_receipt = item.get('Value')
-                    break
-            
+            mpesa_receipt = metadata.get('MpesaReceiptNumber')
+            amount_paid = metadata.get('Amount')
+
+            # FRAUD CHECK 1: paid amount must match order total
+            order_total = float(order.total) if isinstance(order.total, Decimal) else order.total
+            if amount_paid is None or abs(float(amount_paid) - order_total) > 0.01:
+                order.status = 'payment_failed'
+                order.payment_error = f"Amount mismatch: expected {order_total}, received {amount_paid}"
+                db.commit()
+                restore_stock(order, db)
+                return {"ResultCode": 1, "ResultDesc": "Amount mismatch"}
+
+            # FRAUD CHECK 2: duplicate receipt number
+            if mpesa_receipt:
+                existing = db.query(Order).filter(
+                    Order.mpesa_receipt == mpesa_receipt,
+                    Order.id != order.id
+                ).first()
+                if existing:
+                    order.status = 'payment_failed'
+                    order.payment_error = "Duplicate M-Pesa receipt detected"
+                    db.commit()
+                    restore_stock(order, db)
+                    return {"ResultCode": 1, "ResultDesc": "Duplicate receipt"}
+
             # Update order status
             order.status = 'paid'
             order.mpesa_receipt = mpesa_receipt
             order.paid_at = datetime.now()
+            order.payment_error = None
             db.commit()
-            
+
+            logger.info(f"Order #{order.id} marked as paid (receipt {mpesa_receipt})")
+
             return {"ResultCode": 0, "ResultDesc": "Success"}
         else:  # Payment failed
             order.status = 'payment_failed'
             order.payment_error = result_desc
             db.commit()
-            
+            restore_stock(order, db)
+
             return {"ResultCode": result_code, "ResultDesc": result_desc}
-            
+
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"Callback error: {e}")
-        return {"ResultCode": 1, "ResultDesc": f"Processing error: {str(e)}"}
+        logger.exception("M-Pesa callback error")
+        return {"ResultCode": 1, "ResultDesc": "Processing error"}
+
 
 @router.get("/status/{checkout_request_id}")
 async def check_payment_status(
@@ -200,10 +315,10 @@ async def check_payment_status(
         Order.mpesa_checkout_request_id == checkout_request_id,
         Order.user_id == current_user.id
     ).first()
-    
+
     if not order:
         raise HTTPException(404, "Order not found")
-    
+
     return {
         "order_id": order.id,
         "status": order.status,

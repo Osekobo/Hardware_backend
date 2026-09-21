@@ -9,7 +9,7 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 # Get database URL
-SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./local.db")
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Check if URL exists
 if not SQLALCHEMY_DATABASE_URL:

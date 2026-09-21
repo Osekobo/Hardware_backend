@@ -1,19 +1,21 @@
 # routes/auth.py
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Header
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Header, Response
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 import random
 import string
 import logging
 from database import get_db
-from models import User, PasswordResetOTP
+from models import User, Order, OrderItem, PasswordResetOTP
 from auth.jwt import create_token
+from auth.cookies import set_access_token_cookie, clear_access_token_cookie
 from core.security import hash_password, verify_password
 from utils.email import send_reset_email
 from pydantic import BaseModel, EmailStr
 import os
 import secrets
-from auth.dependencies import get_current_admin_user
+from auth.dependencies import get_current_admin_user, get_current_user
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -75,10 +77,9 @@ def register(data: UserCreate, db: Session = Depends(get_db)):
 
         logger.info(f"User registered: {data.email}")
 
-        # Return token with registration response
-        return {
+        # Return token in a httpOnly cookie (not readable by JavaScript)
+        response = JSONResponse(content={
             "message": "registered successfully",
-            "access_token": token,
             "token_type": "bearer",
             "user": {
                 "id": user.id,
@@ -86,7 +87,9 @@ def register(data: UserCreate, db: Session = Depends(get_db)):
                 "email": user.email,
                 "phone": user.phone or ""  # ✅ Added phone to response
             }
-        }
+        })
+        set_access_token_cookie(response, token)
+        return response
 
     except HTTPException:
         raise
@@ -197,9 +200,8 @@ def login(data: UserLogin, db: Session = Depends(get_db)):
 
         logger.info(f"User logged in: {data.email}")
         
-        # ✅ Return user data including phone
-        return {
-            "access_token": token, 
+        # ✅ Return user data including phone; token is set as an httpOnly cookie
+        response = JSONResponse(content={
             "token_type": "bearer",
             "user": {
                 "id": user.id,
@@ -207,13 +209,60 @@ def login(data: UserLogin, db: Session = Depends(get_db)):
                 "email": user.email,
                 "phone": user.phone or ""
             }
-        }
+        })
+        set_access_token_cookie(response, token)
+        return response
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Login error: {e}")
         raise HTTPException(500, f"Login failed: {str(e)}")
+
+@router.post("/logout")
+def logout(response: Response):
+    """Clear the httpOnly access token cookie."""
+    clear_access_token_cookie(response)
+    logger.info("User logged out")
+    return {"message": "logged out successfully"}
+
+
+@router.get("/me")
+def get_me(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get the current user's profile and account statistics.
+    """
+    orders = db.query(Order).filter(Order.user_id == current_user.id).all()
+
+    active_statuses = {"pending", "paid", "shipped"}
+    purchased_statuses = {"paid", "shipped", "delivered"}
+
+    total_orders = 0
+    items_purchased = 0
+    active_orders = 0
+    for order in orders:
+        total_orders += 1
+        status = order.status.value if hasattr(order.status, "value") else order.status
+        if status in purchased_statuses:
+            items_purchased += sum(item.quantity for item in order.items)
+        if status in active_statuses:
+            active_orders += 1
+
+    return {
+        "id": current_user.id,
+        "name": current_user.name,
+        "email": current_user.email,
+        "phone": current_user.phone or "",
+        "is_admin": current_user.is_admin,
+        "created_at": current_user.created_at,
+        "total_orders": total_orders,
+        "items_purchased": items_purchased,
+        "active_orders": active_orders,
+    }
+
 
 # ========== Password Reset Routes ==========
 @router.post("/forgot-password")
