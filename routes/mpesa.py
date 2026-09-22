@@ -4,7 +4,7 @@ import logging
 import math
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import requests
@@ -141,13 +141,16 @@ async def initiate_payment(
 
     access_token = get_mpesa_access_token()
 
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    # FIX 1: Generate timestamp in East Africa Time (UTC+3)
+    eat_tz = timezone(timedelta(hours=3))
+    timestamp = datetime.now(eat_tz).strftime("%Y%m%d%H%M%S")
+    
     password = generate_password(SHORT_CODE, PASS_KEY, timestamp)
 
     stk_data = {
         "BusinessShortCode": SHORT_CODE,
         "Password": password,
-        "Timestamp": timestamp,
+        "Timestamp": timestamp, # This MUST match the timestamp used for the password
         "TransactionType": "CustomerPayBillOnline",
         "Amount": int(math.ceil(payment_amount)),
         "PartyA": phone_number,
@@ -167,6 +170,11 @@ async def initiate_payment(
         response = requests.post(SAF_STK_PUSH_URL, json=stk_data, headers=headers, timeout=15)
         response.raise_for_status()
         response_data = response.json()
+    # FIX 2: Catch HTTP errors specifically to log Safaricom's exact response
+    except requests.exceptions.HTTPError as e:
+        error_details = e.response.text
+        logger.error(f"Safaricom API Error: {e.response.status_code} - {error_details}")
+        raise HTTPException(502, f"M-Pesa API Error: {error_details}")
     except Exception as e:
         logger.error(f"STK push request failed: {e}")
         raise HTTPException(502, "Failed to reach M-Pesa API")
