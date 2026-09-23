@@ -4,12 +4,14 @@ from datetime import datetime, timedelta
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from auth.dependencies import get_current_admin_user, get_current_user
 from database import get_db
 from models import Order, OrderItem, Product, Cart, User
+from services.receipt import generate_order_receipt_pdf
 from utils.stock import restore_stock
 
 router = APIRouter()
@@ -235,6 +237,44 @@ def get_all_orders(
         })
 
     return result
+
+
+@router.get("/{order_id}/receipt")
+def download_receipt(
+    order_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    order = db.query(Order).filter(Order.id == order_id).first()
+
+    if not order:
+        raise HTTPException(404, "Order not found")
+
+    is_admin = current_user.is_admin
+    if not is_admin and order.user_id != current_user.id:
+        raise HTTPException(403, "Access denied")
+
+    if order.status != 'paid':
+        raise HTTPException(400, "Receipt is only available for paid orders")
+
+    items = (db.query(OrderItem)
+             .filter(OrderItem.order_id == order.id)
+             .order_by(OrderItem.id).all())
+
+    buyer = db.query(User).filter(User.id == order.user_id).first() if not is_admin else current_user
+    if buyer is None and not is_admin:
+        raise HTTPException(404, "Order owner not found")
+
+    pdf_bytes = generate_order_receipt_pdf(order, items, buyer or current_user)
+
+    filename = f"kione_receipt_{order.id}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        },
+    )
 
 
 @router.get("/{order_id}")

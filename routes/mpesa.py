@@ -98,6 +98,11 @@ def get_mpesa_access_token():
         return token
     except HTTPException:
         raise
+    except requests.exceptions.RequestException as e:
+        status = getattr(getattr(e, "response", None), "status_code", None)
+        body = getattr(getattr(e, "response", None), "text", None)
+        logger.error(f"M-Pesa authentication failed: {e}")
+        raise HTTPException(500, f"M-Pesa authentication failed (HTTP {status}): {body or e}")
     except Exception as e:
         logger.error(f"M-Pesa authentication failed: {e}")
         raise HTTPException(500, "M-Pesa authentication failed")
