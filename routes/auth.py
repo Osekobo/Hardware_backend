@@ -76,7 +76,8 @@ def register(data: UserCreate, db: Session = Depends(get_db)):
                 "id": user.id,
                 "name": user.name,
                 "email": user.email,
-                "phone": user.phone or ""
+                "phone": user.phone or "",
+                "is_admin": bool(user.is_admin),
             }
         })
         set_access_token_cookie(response, token)
@@ -192,7 +193,8 @@ def login(data: UserLogin, db: Session = Depends(get_db)):
                 "id": user.id,
                 "name": user.name,
                 "email": user.email,
-                "phone": user.phone or ""
+                "phone": user.phone or "",
+                "is_admin": bool(user.is_admin),
             }
         })
         set_access_token_cookie(response, token)

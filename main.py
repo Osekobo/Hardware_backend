@@ -56,7 +56,14 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/static/uploads", StaticFiles(directory="static/uploads"), name="uploads")
 logger.info("Static files mounted at /static/uploads")
 
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8001").split(",")
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "ALLOWED_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8001",
+    ).split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,

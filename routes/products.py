@@ -239,6 +239,55 @@ def get_products(
     }
 
 
+@router.delete("/batch")
+def delete_products(
+    request: BatchDeleteRequest,
+    db: Session = Depends(get_db),
+    user = Depends(get_current_admin_user)
+):
+    if not request.product_ids:
+        raise HTTPException(400, "No product IDs provided")
+
+    products_to_delete = db.query(Product).filter(Product.id.in_(request.product_ids)).all()
+
+    for product in products_to_delete:
+        if product.file_image:
+            delete_image(product.file_image)
+
+    deleted = db.query(Product).filter(Product.id.in_(request.product_ids)).delete(synchronize_session=False)
+    db.commit()
+    return {"message": f"Deleted {deleted} products"}
+
+
+@router.get("/search/quick")
+def quick_search(
+    q: str = Query(..., min_length=1, description="Search query"),
+    limit: int = Query(10, ge=1, le=50, description="Number of results to return"),
+    db: Session = Depends(get_db)
+):
+    products = db.query(
+        Product.id,
+        Product.name,
+        Product.price,
+        Product.file_image
+    ).filter(
+        or_(
+            Product.name.ilike(f"%{q}%"),
+            Product.description.ilike(f"%{q}%")
+        )
+    ).limit(limit).all()
+
+    return [
+        {
+            "id": p.id,
+            "name": p.name,
+            "price": p.price,
+            "file_image": p.file_image
+        }
+        for p in products
+    ]
+
+
 @router.get("/{product_id}")
 def get_product(product_id: int, db: Session = Depends(get_db)):
     product = db.query(Product).filter(Product.id == product_id).first()
@@ -249,20 +298,20 @@ def get_product(product_id: int, db: Session = Depends(get_db)):
 
 @router.put("/{product_id}")
 def update_product(
-    product_id: int, 
-    data: ProductUpdate, 
-    db: Session = Depends(get_db), 
+    product_id: int,
+    data: ProductUpdate,
+    db: Session = Depends(get_db),
     user = Depends(get_current_admin_user)
 ):
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Product not found")
-    
+
     update_data = data.dict(exclude_unset=True)
-    
+
     for key, value in update_data.items():
         setattr(product, key, value)
-    
+
     product.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(product)
@@ -271,17 +320,17 @@ def update_product(
 
 @router.delete("/{product_id}")
 def delete_product(
-    product_id: int, 
-    db: Session = Depends(get_db), 
+    product_id: int,
+    db: Session = Depends(get_db),
     user = Depends(get_current_admin_user)
 ):
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Product not found")
-    
+
     if product.file_image:
         delete_image(product.file_image)
-    
+
     db.delete(product)
     db.commit()
     return {"message": "Product deleted successfully"}
@@ -296,63 +345,14 @@ def delete_product_image(
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(404, "Product not found")
-    
+
     if not product.file_image:
         raise HTTPException(404, "Product has no image")
-    
+
     delete_image(product.file_image)
-    
+
     product.file_image = None
     product.updated_at = datetime.utcnow()
     db.commit()
-    
+
     return {"message": "Product image deleted successfully"}
-
-
-@router.delete("/batch")
-def delete_products(
-    request: BatchDeleteRequest,
-    db: Session = Depends(get_db),
-    user = Depends(get_current_admin_user)
-):
-    if not request.product_ids:
-        raise HTTPException(400, "No product IDs provided")
-
-    products_to_delete = db.query(Product).filter(Product.id.in_(request.product_ids)).all()
-    
-    for product in products_to_delete:
-        if product.file_image:
-            delete_image(product.file_image)
-    
-    deleted = db.query(Product).filter(Product.id.in_(request.product_ids)).delete(synchronize_session=False)
-    db.commit()
-    return {"message": f"Deleted {deleted} products"}
-
-
-@router.get("/search/quick")
-def quick_search(
-    q: str = Query(..., min_length=1, description="Search query"),
-    limit: int = Query(10, ge=1, le=50, description="Number of results to return"),
-    db: Session = Depends(get_db)
-):
-    products = db.query(
-        Product.id, 
-        Product.name, 
-        Product.price, 
-        Product.file_image
-    ).filter(
-        or_(
-            Product.name.ilike(f"%{q}%"),
-            Product.description.ilike(f"%{q}%")
-        )
-    ).limit(limit).all()
-    
-    return [
-        {
-            "id": p.id,
-            "name": p.name,
-            "price": p.price,
-            "file_image": p.file_image
-        }
-        for p in products
-    ]
